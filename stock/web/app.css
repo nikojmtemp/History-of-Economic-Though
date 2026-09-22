@@ -114,3 +114,7 @@ table.plain td.n { text-align: right; }
   font-size: 12px; border-radius: var(--radius); pointer-events: none; white-space: pre-line; }
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--down); color: #fff;
   padding: 6px 12px; border-radius: var(--radius); z-index: 40; }
+.strike { fill: none; stroke: var(--down); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
+.odds { font: bold 11px var(--sans); fill: var(--down); pointer-events: none; }
+.enemy-ring { fill: none; stroke: var(--down); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }
+.siege-ring { fill: none; stroke: var(--warn); stroke-width: 3; stroke-dasharray: 6 3; }

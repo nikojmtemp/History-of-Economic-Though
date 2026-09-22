@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from stock.game import actions, ai, economy, politics, research, rules, trade, victory
+from stock.game import actions, ai, economy, military, politics, research, rules, trade, victory
 from stock.game.state import Nation, World
 
 
@@ -39,6 +39,9 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
         figures["spent"] = spent
         n.last.update(figures)
 
+    # armies: upkeep, supply, sieges, the host's season, rebels, tribute
+    military.tick(world)
+
     # 8. politics
     trade.update_contacts(world)
     trade.update_routes(world)
@@ -52,6 +55,7 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
         n.sway = economy.clamp(n.sway + sum(parts.values()), 0.0, rules.SWAY_CAP)
         politics.update_seat(world, n)
         politics.update_unrest(world, n)
+        military.check_revolts(world, n)
         politics.maybe_demand(world, n)
         n.feast_ready = max(0, n.feast_ready - 1)
 
@@ -92,6 +96,7 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
     for u in world.units.values():
         u.moves_left = u.max_moves(set(world.nations[u.nation].known))
         u.followed = False
+        u.road_used = False
 
 
 def _freedom(n: Nation) -> float:

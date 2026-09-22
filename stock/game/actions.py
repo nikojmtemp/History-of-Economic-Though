@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stock.game import economy, politics, research, rules, trade
+from stock.game import economy, military, politics, research, rules, trade
 from stock.game.state import Nation, Node, Unit, World
 
 Action = dict[str, Any]
@@ -49,8 +49,15 @@ def move_cost(world: World, u: Unit, to: str) -> int | None:
 
 
 def can_enter(world: World, n: Nation, node_id: str) -> bool:
+    """Peaceful passage: open ground or our own. War opens the enemy's ground to soldiers."""
+
     owner = world.nodes[node_id].owner
     return owner is None or owner == n.id
+
+
+def hostile_at(world: World, n: Nation, node_id: str) -> bool:
+    nd = world.nodes[node_id]
+    return world.hostile_owner(n.id, nd) or any(world.hostile(u, n.id) for u in world.units_at(node_id))
 
 
 def expected_return(world: World, n: Nation, nd: Node, work: str) -> float:
@@ -112,6 +119,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
     kind = a.get("kind")
     if not n.alive:
         return "this nation is gone"
+    if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
+        return _check_war(world, n, a)
     if kind in ("move", "split", "merge", "follow", "tame", "settle"):
         u = _unit(world, n, a)
         if u is None:
@@ -124,12 +133,16 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
             c = move_cost(world, u, to)
             if c is None:
                 return "not adjacent by land"
-            if not can_enter(world, n, to):
-                return "settled by another people"
             if u.moves_left <= 0 or (c > u.moves_left and u.moves_left < u.max_moves(set(n.known))):
                 return "no moves left this turn"
+            if hostile_at(world, n, to):
+                return None if u.military else "enemies there: only soldiers can go"
+            if not can_enter(world, n, to):
+                return "settled by another people: at peace, you may not enter"
             return None
         if kind == "split":
+            if u.military:
+                return "armies do not split"
             if u.hands < 2 * rules.MIN_UNIT_HANDS:
                 return f"needs at least {2 * rules.MIN_UNIT_HANDS:.0f} hands"
             if n.sway < split_cost(n):
@@ -139,6 +152,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
             o = world.units.get(str(a.get("other", "")))
             if o is None or o.nation != n.id or o.id == u.id or o.node != u.node:
                 return "needs another of your units on the same node"
+            if o.kind != u.kind and (u.military or o.military):
+                return "only units of one kind merge"
             return None
         if kind == "follow":
             if "wild_herds" not in nd.features:
@@ -149,6 +164,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
                 return "already following"
             return None
         if kind == "tame":
+            if u.military:
+                return "soldiers do not tame herds"
             if not n.knows("taming"):
                 return "needs Taming"
             if u.kind != "band":
@@ -157,6 +174,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
                 return "no wild herds here"
             return None
         if kind == "settle":
+            if u.military:
+                return "soldiers do not settle: disband them"
             if nd.owner not in (None, n.id):
                 return "settled by another people"
             if nd.owner is None:
@@ -186,6 +205,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
             return "not in contact"
         if trade.route_between(world, n.id, other.id):
             return "already trading"
+        if military.at_war(world, n.id, other.id):
+            return "at war"
         if not trade.in_reach(world, n, other):
             return "too far: bring a band next to them"
         if trade.route_count(world, n.id) >= trade.route_slots(world, n):
@@ -265,6 +286,48 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
     return f"unknown action {kind!r}"
 
 
+def _check_war(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "raise_unit":
+        src: Node | Unit | None = _own_node(world, n, a.get("node")) if a.get("node") else _unit(world, n, a)
+        if src is None:
+            return "raise at your settlement, or from your band or horde"
+        if isinstance(src, Unit) and src.military:
+            return "raise from a people, not an army"
+        return military.raise_blocker(world, n, src, str(a.get("unit_kind", "")))
+    if kind in ("disband", "upgrade", "raid"):
+        u = _unit(world, n, a)
+        if u is None or not (u.military or kind == "raid"):
+            return "no such army"
+        if kind == "upgrade":
+            return military.upgrade_blocker(world, n, u)
+        if kind == "raid":
+            return military.raid_blocker(world, n, u, str(a.get("to", "")))
+        return None
+    other = world.nations.get(str(a.get("nation", "")))
+    if other is None or other.id == n.id or not other.alive:
+        return "no such people"
+    if other.id not in n.contacts:
+        return "not in contact"
+    if kind == "declare_war":
+        if military.at_war(world, n.id, other.id):
+            return "already at war"
+        if n.truce.get(other.id, 0) >= world.turn:
+            return f"a truce holds until turn {n.truce[other.id]}"
+        cost = 0.0 if other.id in n.casus_belli else rules.WAR_COST
+        return None if n.sway >= cost else f"needs {cost:.0f} Sway (no just cause)"
+    w = world.war_between(n.id, other.id)
+    if w is None:
+        return "not at war"
+    if world.turn - int(w["since"]) < rules.PEACE_MIN_TURNS:
+        return f"the war is barely begun ({rules.PEACE_MIN_TURNS} turns)"
+    if a.get("terms") not in ("white", "tribute", "submit"):
+        return "terms: white, tribute or submit"
+    if any(d.kind == "peace" and d.data.get("from") == n.id for d in other.decisions):
+        return "an offer is already waiting"
+    return None
+
+
 # --- application ---------------------------------------------------------------------------------
 
 
@@ -276,12 +339,22 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
     if why:
         return why
     kind = a["kind"]
+    if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
+        return _act_war(world, n, a)
     if kind == "move":
         u = _unit(world, n, a)
         assert u is not None
-        c = move_cost(world, u, str(a["to"])) or 1
-        u.moves_left = max(0, u.moves_left - c)
-        u.node = str(a["to"])
+        to = str(a["to"])
+        c = move_cost(world, u, to) or 1
+        e = world.edge_between(u.node, to)
+        if e is not None and e.kind == "road" and u.kind in ("regiment", "musketeers") and not u.road_used:
+            u.road_used = True  # one free step on a road each turn: +1 move
+        else:
+            u.moves_left = max(0, u.moves_left - c)
+        if hostile_at(world, n, to):
+            military.advance(world, u, to)
+        else:
+            u.node = to
         trade.update_fog(world, n)
         trade.update_contacts(world)
     elif kind == "split":
@@ -414,7 +487,52 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
     elif kind == "budget":
         n.budget[str(a["line"])] = int(a["level"])
     elif kind == "decide":
+        d = next(x for x in n.decisions if x.id == a["id"])
+        if d.kind == "capture":
+            if a.get("choice") not in {c["key"] for c in d.choices}:
+                return "no such choice"
+            n.decisions.remove(d)
+            military.resolve_capture(world, n, d.data["node"], str(a["choice"]), d.data.get("from"))
+            return None
+        if d.kind == "peace":
+            n.decisions.remove(d)
+            if a.get("choice") == "accept":
+                military.make_peace(world, world.nations[d.data["from"]], n, d.data.get("payer"))
+            return None
         return politics.resolve_decision(world, n, str(a["id"]), str(a.get("choice", "")))
+    return None
+
+
+def _act_war(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "raise_unit":
+        src: Node | Unit | None = _own_node(world, n, a.get("node")) if a.get("node") else _unit(world, n, a)
+        assert src is not None
+        raised = military.raise_unit(world, n, src, str(a["unit_kind"]))
+        name = rules.UNITS[raised.kind].name
+        world.emit(n.id, "raised", f"{name} raised at {world.nodes[raised.node].name}.", raised.node)
+    elif kind in ("disband", "upgrade", "raid"):
+        unit = _unit(world, n, a)
+        assert unit is not None
+        if kind == "disband":
+            military.disband(world, unit)
+        elif kind == "upgrade":
+            t = rules.UNITS["musketeers"]
+            n.store["wares"] -= t.wares
+            n.treasury -= t.treasury
+            unit.kind = "musketeers"
+        else:
+            military.raid(world, n, unit, str(a["to"]))
+    elif kind == "declare_war":
+        other = world.nations[str(a["nation"])]
+        if other.id not in n.casus_belli:
+            n.sway -= rules.WAR_COST
+        military.declare_war(world, n, other)
+    elif kind == "offer_peace":
+        other = world.nations[str(a["nation"])]
+        made = military.offer_peace(world, n, other, str(a["terms"]))
+        if not other.player and not made:
+            return "refused"
     return None
 
 

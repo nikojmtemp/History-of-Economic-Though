@@ -649,7 +649,7 @@ War is map play. Armies are stacks of units on nodes, moved along edges.
 | **Band** (civilian) | — | — | Split | Food | 1 | 1 | Carries hands. §7.2. |
 | **Warband** | Every Man a Warrior | 1 hand | — | Food only | 1 | 3 | Its hand stops hunting while mobilised |
 | **Horde** | Nation in Arms | 2 hands + 10 herds | — | Food | 2 | 6 | Keeps herding at half output. Raids ×2. |
-| **Feudal Host** | Feudal Host | 3 retainers | Free to the state | Proprietors pay | 1 | 5 | Disbands after 4 turns (seasonal). Can refuse to muster. |
+| **Feudal Host** | Feudal Host | 2 retainers | Free to the state | Proprietors pay | 1 | 4 | Disbands after 4 turns (seasonal). Can refuse to muster. |
 | **Militia** | Militia | 2 hands | 5 Wares | 1 Food | 1 | 5 | −Stupefaction. Hands go back to work when it disbands. |
 | **Regiment** | Standing Army | 2 hands | 10 Wares, 10 Treasury | 2 Food, 3 Treasury | 1 (+1 on roads) | 7, +1 per 5 turns of drill (max +3) | |
 | **Musket Regiment** | Firearms + a Foundry | Upgrade a Regiment | +10 Wares | +1 Treasury | 1 (+1 on roads) | 10 | |
@@ -688,7 +688,7 @@ In short: nomads outclass the early settled world, especially in the open. Settl
 
 ### 15.4 Sieges and capture
 
-- An undefended node without a Fort is **captured** when you enter it.
+- An undefended node without a Fort is **captured** when you enter it. A settlement's own people turn out to defend it (strength 0.5 per hand), but not for a conqueror: a lately conquered town must be garrisoned or it is easily retaken.
 - A node with a Fort must be **besieged**: 2 turns per Fort level, during which the besieger takes attrition, and the defender's hands and food stores run down.
 - **On capture**, choose one:
   - **Occupy**: the node becomes yours with its hands and Works. Unrest is +30 for 10 turns (fading).
@@ -701,6 +701,7 @@ Warbands and Hordes can **Raid**: enter an enemy node, take Food, herds, or a sl
 
 ### 15.6 War declaration, casus belli, war score
 
+- Peace brings a **truce** of 15 turns between the two peoples: neither can declare war on the other until it ends.
 - Declaring war costs 15 Sway, or 0 with a **casus belli**. You get a casus belli when they raided you, broke a treaty, blockaded you, or embargoed you. A Coalition against the hegemon also has one (§17.4).
 - **War score** comes from nodes held, battles won, and blockades. It decides which peace terms the other side will accept (§16).
 

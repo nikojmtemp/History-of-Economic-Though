@@ -43,8 +43,8 @@ Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:N
 |---|---|
 | M1 The band | Done: map, fog, bands (hunt, move, split, merge, follow, tame), contact, barter, Sway, discoveries |
 | M2 Property and produce | Done: herds, hordes, settling, works and the investment queue, three orders, the split, Extent and DoL, prices, consumption, retainers vs luxuries, modes and moments |
-| M3 The state | Mostly done: Chiefdom, Civil Government, five pillars, Treasury, revenue and incidence, budget, Security, Demands, Interregnum, forecasts. Missing: the other §18 events and Exile |
-| M4 War | Not started: military units, combat, sieges, raids, rebels. Security uses a fixed defence ratio until then |
+| M3 The state | Mostly done: Chiefdom, Civil Government, five pillars, Treasury, revenue and incidence, budget, Security, Demands, Interregnum, Exile, forecasts. Missing: the other §18 events |
+| M4 War | Done: warbands, riders, feudal host, militia, regiments, musketeers; movement, supply and cohesion, battles with odds, sieges and forts, capture (occupy, plunder, raze), raids and casus belli, war, peace, tribute and truce, rebels, war weariness, Security from real defence. Deferred: fleets and blockades (M5, with sea routes), zones of control, debt-funded wars (needs Public Credit) |
 | M5 Trade and diplomacy | Barter routes only. Missing: goods flows, caravans, sea routes, blockades, treaties |
-| M6 Hegemony and AI | Shares and opulence done. Orbits (levers) wait on M4–M5, so hegemony can't trigger yet |
+| M6 Hegemony and AI | Shares and opulence done. Tribute now exists (the force lever's input); orbits still wait on M5, so hegemony can't trigger yet |
 | M7 Polish | UI shell, moments, Commonplace Book done. Missing: onboarding hints, more overlays, curves screen, end screen |

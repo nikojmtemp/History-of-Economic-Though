@@ -18,7 +18,6 @@ def run(seed: int) -> dict[str, object]:
     w = generate(seed=seed)
     for n in w.nations.values():
         n.player = False
-    wars = 0  # armies arrive with M4
     first_left, all_left, manufactory = None, None, None
     for t in range(1, rules.LAST_TURN + 1):
         turn.end_turn(w)
@@ -29,6 +28,7 @@ def run(seed: int) -> dict[str, object]:
             all_left = t
         if manufactory is None and any("manufactory" in nd.works for nd in w.nodes.values()):
             manufactory = t
+    wars = sum(1 for e in w.log if e.kind == "war" and e.text.startswith("We declare"))
     agri = min((n.counters.get("mode_agriculture_turn", 999.0) for n in w.nations.values()), default=999.0)
     comm = [n.counters.get("mode_commerce_turn") for n in w.nations.values()]
     return {
@@ -64,6 +64,7 @@ def main() -> None:
         ("all peoples leave Hunting by turn 45", share(lambda r: r["all_left"] and r["all_left"] <= 45), 0.9),
         ("someone farms by turn 60", share(lambda r: r["agriculture"] <= 60), 0.9),
         ("a manufactory by turn 110", share(lambda r: r["manufactory"] and r["manufactory"] <= 110), 0.9),
+        ("at least 1 war per 25 turns (6 a game)", share(lambda r: r["wars"] >= 6), 0.5),
     ]
     pending = ["hegemony in 30-60% of games (needs orbits: trade flows, loans, tribute; M5-M6)"]
     print(f"{n} seeds in {time.time() - t0:.1f}s")
@@ -74,6 +75,7 @@ def main() -> None:
     firsts = [r["first_left"] for r in rows if r["first_left"]]
     if firsts:
         print(f"median first leave: turn {statistics.median(firsts)}")  # type: ignore[type-var]
+    print(f"wars per game: median {statistics.median(r['wars'] for r in rows)}")  # type: ignore[type-var]
     comms = [r["commerce"] for r in rows if r["commerce"]]
     print(
         f"Commerce reached in {len(comms)}/{n} games"

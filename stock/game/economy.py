@@ -80,7 +80,9 @@ def security_of(world: World, n: Nation) -> float:
         bonus += 0.1
     if n.option("revenue") == "tax_farming":
         bonus -= 0.1
-    defence_ratio = 0.5  # until armies exist (M4), every nation reads as half-defended
+    from stock.game.military import defence_ratio as _defence_ratio  # military imports this module
+
+    defence_ratio = _defence_ratio(world, n)
     return clamp(0.4 + 0.3 * justice / 3 + 0.2 * defence_ratio - 0.2 * disorder + bonus, 0.2, 1.0)
 
 
@@ -203,6 +205,8 @@ def plan_labour(world: World, n: Nation) -> Plan:
     dol = float(n.last.get("dol", 1.0))
     free = n.option("labour") in rules.FREE_LABOUR
     for nd in world.nodes_of(n.id):
+        if nd.siege is not None:
+            continue  # a besieged town neither sows nor trades
         workforce = nd.hands * plan.workforce_share
         jobs = _work_jobs(world, n, nd, dol)
         plan.open_jobs += sum(j[1] for j in jobs)
@@ -230,6 +234,8 @@ def plan_labour(world: World, n: Nation) -> Plan:
             else:
                 plan.jobs.append(Job(nd.id, "forage", workforce, food=workforce * rules.FORAGE_YIELD))
     for u in world.units_of(n.id):
+        if u.military:
+            continue  # soldiers eat, but do not work
         workforce = u.hands * plan.workforce_share
         if u.kind == "horde" and u.herds > 0:
             herdsmen = min(workforce, u.herds / rules.HERDS_PER_HERDSMAN)
@@ -640,6 +646,27 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
         "filled_jobs": plan.filled_jobs,
         "lux_share": lux_share,
     }
+
+
+def revenue_estimate(world: World, n: Nation, option: str) -> float:
+    """What `option` would have collected last turn at the current rate (§14.1); for
+    the Treasury screen and the AI's choice of revenue."""
+
+    L = n.last
+    if "income" not in L:
+        return 0.0
+    rate = rules.TAX_RATES[n.tax_rate]
+    eff = 0.5 + 0.5 * n.budget.get("justice", 0) / 3
+    income, split, produce = L["income"], L["split"], float(L["produce"])
+    rent = float(split.get("rent", 0.0)) if _private_land(n) or _private_herds(n) else 0.0
+    routes = sum(rt.capacity for rt in world.routes.values() if n.id in (rt.a, rt.b)) * 2.0
+    return {
+        "feudal_dues": rate * float(income.get("proprietors", 0.0)) * 0.5 * eff,
+        "land_tax": rate * rent * 0.85 * eff,
+        "excise": rate * float(income.get("labour", 0.0)) * eff,
+        "tax_farming": rate * produce * 0.9 * 0.7,
+        "customs": rate * routes * eff,
+    }.get(option, 0.0)
 
 
 def spend_budget(world: World, n: Nation) -> dict[str, float]:

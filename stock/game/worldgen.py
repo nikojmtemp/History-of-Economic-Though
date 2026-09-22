@@ -27,10 +27,10 @@ class WorldGenConfig:
     rivers: int = 2
 
     def __post_init__(self) -> None:
-        if self.nodes < 8:
-            raise ValueError("a world needs at least 8 nodes")
-        if not 1 <= self.nations <= len(rules.NATION_COLOURS):
-            raise ValueError(f"1 to {len(rules.NATION_COLOURS)} nations")
+        if not rules.MAP_NODES[0] <= self.nodes <= rules.MAP_NODES[1]:
+            raise ValueError(f"a world has {rules.MAP_NODES[0]} to {rules.MAP_NODES[1]} nodes")
+        if not 2 <= self.nations <= len(rules.NATION_COLOURS):
+            raise ValueError(f"2 to {len(rules.NATION_COLOURS)} peoples")
         if self.nations * 5 > self.nodes:
             raise ValueError("at least 5 nodes per nation")
 

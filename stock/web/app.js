@@ -74,6 +74,7 @@ function renderTop() {
     ["Ingenuity", me.ingenuity, null, `Research per turn.\n${tipOf(b.ingenuity)}`],
     ["Extent", me.extent, null, `Extent of the market: hands in your largest connected market plus towns and routes. Division of labour ×${fmt(me.dol, 2)}.`],
     ["Hands", me.hands, null, `Your people, in hands. Herds ${fmt(me.herds, 0)}. Retainers ${fmt(me.retainers)}.`],
+    ["Army", me.war.strength, null, armyTip(me)],
   ];
   $("resources").innerHTML = res.map(([k, v, d, tip]) => `<div class="res" data-tip="${esc(tip)}"><span class="k">${k}</span><span class="v">${fmt(v)}</span>${d == null ? "" : `<span class="d ${cls(d)}">${sgn(d)}</span>`}</div>`).join("");
   const mine = S.nations.find((n) => n.id === me.id);
@@ -83,6 +84,17 @@ function renderTop() {
   $("hegemony").innerHTML = `World produce: you ${pct(mine.share)} · lead ${esc(leader.name)} ${pct(leader.share)}<div class="bar"><i style="width:${pct(mine.share)}"></i><b style="left:40%"></b></div>${cd}`;
   $("hegemony").dataset.tip = "Hegemony needs 40% of the world's produce (the mark) and half the other peoples in your orbit, held for 10 turns, from turn 50. Otherwise, at turn 150 the most opulent people (produce per head) wins.";
   if (S.winner) $("turn").innerHTML += ` · <b class="warn">${esc(S.winner.text)}</b>`;
+}
+
+function armyTip(me) {
+  const lines = [`Strength of your armies: ${fmt(me.war.strength)}.`];
+  if (me.war.wars.length) {
+    lines.push("At war with " + me.war.wars.map((w) => `${S.nations.find((x) => x.id === w.with)?.name} (score ${w.score > 0 ? "+" : ""}${w.score})`).join(", "));
+  } else lines.push("At peace.");
+  lines.push(`War weariness ${fmt(me.war.weariness)} (adds to unrest).`);
+  if (me.war.tributes.length) lines.push("We pay tribute: " + me.war.tributes.map((t) => `${t.turns} turns`).join(", "));
+  if (me.war.tribute_in.length) lines.push("Tribute paid to us: " + me.war.tribute_in.map((t) => `${S.nations.find((x) => x.id === t.from)?.name}, ${t.turns} turns`).join(", "));
+  return lines.join("\n");
 }
 
 // --- society: orders and the annual produce --------------------------------------------
@@ -139,7 +151,8 @@ function renderMap() {
     } else svg.push(`<line class="edge-${e.kind}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
   }
   const selUnit = sel && sel.type === "unit" ? S.units.find((u) => u.id === sel.id) : null;
-  const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok).map((m) => m.to) : []);
+  const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack == null).map((m) => m.to) : []);
+  const strike = Object.fromEntries(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack != null).map((m) => [m.to, m.attack]) : []);
   for (const n of S.nodes) {
     const r = radius(n);
     let fill = TERRAIN_FILL[n.terrain];
@@ -155,6 +168,10 @@ function renderMap() {
       ${feats ? `<text class="node-sub" x="${n.x}" y="${n.y - r - 3}" text-anchor="middle">${feats}</text>` : ""}
     </g>`);
     if (reach.has(n.id)) svg.push(`<circle class="reach" cx="${n.x}" cy="${n.y}" r="${r + 6}"/>`);
+    if (strike[n.id] != null) svg.push(`<circle class="strike" cx="${n.x}" cy="${n.y}" r="${r + 6}"/><text class="odds" x="${n.x}" y="${n.y - r - 12}" text-anchor="middle">${pct(strike[n.id])}</text>`);
+    if (n.enemy) svg.push(`<circle class="enemy-ring" cx="${n.x}" cy="${n.y}" r="${r + 2}"/>`);
+    if (n.siege) svg.push(`<circle class="siege-ring" cx="${n.x}" cy="${n.y}" r="${r + 9}"><title>Besieged: ${n.siege.turns} turns left</title></circle>`);
+    if (n.forts) svg.push(`<text class="node-sub" x="${n.x + r + 2}" y="${n.y + 3}">${"▣".repeat(n.forts)}</text>`);
     if (sel && sel.type === "node" && sel.id === n.id) svg.push(`<circle class="selected-ring" cx="${n.x}" cy="${n.y}" r="${r + 5}"/>`);
   }
   // units: fanned out around their node
@@ -165,13 +182,19 @@ function renderMap() {
     us.forEach((u, i) => {
       const ang = -Math.PI / 2 + (i - (us.length - 1) / 2) * 0.7;
       const x = n.x + Math.cos(ang) * (radius(n) + 12), y = n.y + Math.sin(ang) * (radius(n) + 12) + 4;
-      const col = nations[u.nation]?.colour || "#555";
+      const col = u.rebel ? "#222" : nations[u.nation]?.colour || "#555";
       const isSel = selUnit && selUnit.id === u.id;
-      const shape = u.kind === "horde"
-        ? `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="${isSel ? "var(--warn)" : "var(--paper)"}" stroke-width="${isSel ? 3 : 1.5}"/>`
-        : `<path d="M${x},${y - 10} L${x + 10},${y + 7} L${x - 10},${y + 7} Z" fill="${col}" stroke="${isSel ? "var(--warn)" : "var(--paper)"}" stroke-width="${isSel ? 3 : 1.5}"/>`;
-      const tip = `${u.nation === S.me.id ? "Your" : esc(nations[u.nation]?.name) + "'s"} ${u.kind}: ${fmt(u.hands)} hands${u.herds ? `, ${fmt(u.herds, 0)} head of herds` : ""}${u.moves_left != null ? `\nMoves ${u.moves_left}/${u.max_moves}` : ""}`;
-      svg.push(`<g class="unit" data-unit="${u.id}" data-tip="${esc(tip)}">${shape}<text x="${x}" y="${y + (u.kind === "horde" ? 3 : 4)}" text-anchor="middle">${Math.round(u.hands)}</text></g>`);
+      const edge = isSel ? "var(--warn)" : u.hostile ? "var(--down)" : "var(--paper)";
+      const sw = isSel || u.hostile ? 3 : 1.5;
+      const shape = u.military
+        ? `<path d="M${x - 9},${y - 9} L${x + 9},${y - 9} L${x + 9},${y + 2} Q${x},${y + 12} ${x - 9},${y + 2} Z" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`
+        : u.kind === "horde"
+          ? `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`
+          : `<path d="M${x},${y - 10} L${x + 10},${y + 7} L${x - 10},${y + 7} Z" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`;
+      const who = u.rebel ? "Rebels" : u.nation === S.me.id ? "Your" : esc(nations[u.nation]?.name) + "'s";
+      const tip = `${who} ${u.name}: ${fmt(u.hands)} hands${u.herds ? `, ${fmt(u.herds, 0)} head of herds` : ""}\nStrength ${fmt(u.strength)}${u.military ? ` · cohesion ${u.cohesion}` : ""}${u.hostile ? "\nAt war with you" : ""}${u.moves_left != null ? `\nMoves ${u.moves_left}/${u.max_moves}` : ""}`;
+      const label = u.military ? Math.round(u.strength) : Math.round(u.hands);
+      svg.push(`<g class="unit" data-unit="${u.id}" data-tip="${esc(tip)}">${shape}<text x="${x}" y="${y + (u.military ? 1 : u.kind === "horde" ? 3 : 4)}" text-anchor="middle">${label}</text></g>`);
     });
   }
   $("map").innerHTML = svg.join("");
@@ -215,6 +238,7 @@ $("map").addEventListener("click", (e) => {
     if (selUnit && selUnit.moves && selUnit.moves.some((m) => m.to === id)) {
       const m = selUnit.moves.find((m) => m.to === id);
       if (!m.ok) { toast(m.why); return; }
+      if (m.attack != null && !confirm(`Attack ${nodeById()[id].name}? You can expect ${pct(m.attack)} of the field (luck ±15%).`)) return;
       act({ kind: "move", unit: selUnit.id, to: id }).then(() => { sel = { type: "unit", id: selUnit.id }; renderAll(); });
       return;
     }
@@ -239,6 +263,7 @@ function renderSelection() {
     const u = S.units.find((x) => x.id === sel.id);
     if (!u) { sel = null; return renderSelection(); }
     const n = nodeById()[u.node];
+    if (u.military) { box.innerHTML = armyCard(u, n); return; }
     let h = `<h2>${u.kind === "horde" ? "Horde" : "Band"} at ${esc(n.name)}</h2>`;
     h += `<div>${fmt(u.hands)} hands${u.herds ? ` · ${fmt(u.herds, 0)} head of herds` : ""} · moves ${u.moves_left}/${u.max_moves}${u.followed ? " · following the herds" : ""}</div>`;
     h += `<div class="verbs">`;
@@ -247,6 +272,8 @@ function renderSelection() {
       h += `<button ${why ? "disabled" : ""} data-tip="${esc(why ? `${VERB_TIP[k]}\nNot now: ${why}` : VERB_TIP[k])}" onclick="act({kind:'${k}',unit:'${u.id}'})">${label}</button>`;
     }
     for (const other of u.merge_with) h += `<button onclick="act({kind:'merge',unit:'${u.id}',other:'${other}'})">Merge</button>`;
+    for (const o of u.raise_options) h += `<button ${o.why ? "disabled" : ""} data-tip="${esc(raiseTip(o.kind, o.why))}" onclick="act({kind:'raise_unit',unit:'${u.id}',unit_kind:'${o.kind}'})">Raise ${esc(o.name)}</button>`;
+    h += raidButtons(u);
     h += `</div><div class="small muted">A band that does not move hunts where it stands. Move by clicking a ringed neighbour.</div>`;
     box.innerHTML = h;
     return;
@@ -257,7 +284,13 @@ function renderSelection() {
   h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
   if (n.owner === S.me.id) {
     h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)}</span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
-    h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button></div>`;
+    if (n.siege) h += `<div class="warn">Besieged by ${esc(S.nations.find((x) => x.id === n.siege.by)?.name)}: falls in ${n.siege.turns} turns unless relieved.</div>`;
+    h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button>`;
+    for (const o of n.raise_options) {
+      if (o.why && /needs the|needs [A-Z]/.test(o.why) && o.kind !== "warband") continue;
+      h += `<button ${o.why ? "disabled" : ""} data-tip="${esc(raiseTip(o.kind, o.why))}" onclick="act({kind:'raise_unit',node:'${n.id}',unit_kind:'${o.kind}'})">Raise ${esc(o.name)}</button>`;
+    }
+    h += `</div>`;
     h += `<div class="build">`;
     for (const b of n.buildable) {
       if (b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")) continue;
@@ -273,6 +306,34 @@ function renderSelection() {
     h += `<h3>Investment queue</h3>` + q.map((it, i) => `<div class="small">${i + 1}. ${esc(S.works.find((x) => x.key === it.work)?.name)} at ${esc(nodeById()[it.node]?.name)} — <span class="muted">${esc(it.status)}</span> <button onclick="act({kind:'unqueue',index:${i}})">✕</button></div>`).join("");
   }
   box.innerHTML = h;
+}
+
+// --- war ----------------------------------------------------------------------------------------
+
+function raiseTip(kind, why) {
+  const o = S.unit_types[kind] || {};
+  const cost = [o.hands && `${o.hands} hands`, o.herds && `${o.herds} herds`, o.wares && `${o.wares} wares`, o.treasury && `${o.treasury} Treasury`].filter(Boolean).join(", ");
+  return `${o.description || ""}\nStrength ${o.strength ?? "?"}${cost ? ` · takes ${cost}` : ""}${o.upkeep ? ` · ${o.upkeep} Treasury a turn` : ""}\nSoldiers eat but do not work.${why ? `\nNot now: ${why}` : ""}`;
+}
+function raidButtons(u) {
+  return (u.raids || []).map((r) => {
+    const who = S.nations.find((x) => x.id === r.victim)?.name || "them";
+    return `<button data-tip="${esc(`Raid ${nodeById()[r.to].name}: take food, herds and hoards from ${who} without holding the ground. Odds ${pct(r.odds)}. They gain a just cause for war.`)}" onclick="act({kind:'raid',unit:'${u.id}',to:'${r.to}'})">Raid ${esc(nodeById()[r.to].name)} (${pct(r.odds)})</button>`;
+  }).join("");
+}
+function armyCard(u, n) {
+  let h = `<h2>${esc(u.name)} at ${esc(n.name)}</h2>`;
+  h += `<div>${fmt(u.hands)} hands · strength ${fmt(u.strength)} · moves ${u.moves_left}/${u.max_moves} · ${u.supplied ? '<span class="up">supplied</span>' : '<span class="down">out of supply: losing cohesion</span>'}</div>`;
+  h += `<div class="meter" style="max-width:260px" data-tip="Cohesion ${u.cohesion}: order and morale. Falls in battle, sieges and hunger; recovers in supply. Below 20 the unit is broken."><i style="width:${u.cohesion}%;background:${u.cohesion < 35 ? "var(--down)" : "var(--ink-2)"}"></i></div>`;
+  const targets = u.moves.filter((m) => m.ok && m.attack != null);
+  h += `<div class="verbs">`;
+  for (const m of targets) h += `<button onclick="if(confirm('Attack ${esc(nodeById()[m.to].name)}? Expect ${pct(m.attack)} of the field.'))act({kind:'move',unit:'${u.id}',to:'${m.to}'})">Attack ${esc(nodeById()[m.to].name)} (${pct(m.attack)})</button>`;
+  h += raidButtons(u);
+  if (u.kind === "regiment") h += `<button ${u.upgrade ? "disabled" : ""} data-tip="${esc(u.upgrade || "Arm the regiment with firearms: 20 wares, 10 Treasury.")}" onclick="act({kind:'upgrade',unit:'${u.id}'})">Firearms</button>`;
+  for (const other of u.merge_with) h += `<button onclick="act({kind:'merge',unit:'${u.id}',other:'${other}'})">Merge</button>`;
+  h += `<button data-tip="Send the soldiers home to work." onclick="act({kind:'disband',unit:'${u.id}'})">Disband</button></div>`;
+  h += `<div class="small muted">${esc(u.description)} Red rings: enemies you can attack, with your expected share of the field.</div>`;
+  return h;
 }
 
 // --- the now column ---------------------------------------------------------------------------
@@ -375,11 +436,20 @@ function spark(hist, key, colour) {
   return `<svg width="200" height="42"><polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"/></svg>`;
 }
 function screenNations() {
-  let h = `<h2>Peoples</h2><table class="plain"><tr><th>People</th><th>Age</th><th>Seat</th><th>Hands</th><th>World share</th><th>Per head</th><th>Relations</th><th>Produce</th><th></th></tr>`;
+  let h = `<h2>Peoples</h2><table class="plain"><tr><th>People</th><th>Age</th><th>Seat</th><th>Hands</th><th>Army</th><th>World share</th><th>Per head</th><th>Relations</th><th>Produce</th><th></th></tr>`;
   for (const n of S.nations) {
-    if (!n.met) { h += `<tr><td class="muted">${esc(n.name)}</td><td colspan="8" class="muted">not yet met</td></tr>`; continue; }
-    const btn = n.id === S.me.id ? "" : n.trading ? '<span class="up">bartering</span>' : `<button ${n.barter ? "disabled" : ""} data-tip="${esc(n.barter || "Open a barter route: both markets widen, knowledge flows, relations improve.")}" onclick="act({kind:'barter',nation:'${n.id}'}).then(renderScreen)">Barter</button>`;
-    h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
+    if (!n.met) { h += `<tr><td class="muted">${esc(n.name)}</td><td colspan="9" class="muted">not yet met</td></tr>`; continue; }
+    let btn = n.id === S.me.id ? "" : n.at_war ? "" : n.trading ? '<span class="up">bartering</span> ' : `<button ${n.barter ? "disabled" : ""} data-tip="${esc(n.barter || "Open a barter route: both markets widen, knowledge flows, relations improve.")}" onclick="act({kind:'barter',nation:'${n.id}'}).then(renderScreen)">Barter</button> `;
+    if (n.id !== S.me.id && n.at_war) {
+      btn += `<span class="down">At war · score ${n.war_score > 0 ? "+" : ""}${n.war_score}</span> `;
+      const terms = { white: "Peace as things stand", tribute: "Demand tribute", submit: "Offer tribute" };
+      for (const [k, label] of Object.entries(terms)) btn += `<button ${n.peace[k] ? "disabled" : ""} data-tip="${esc(n.peace[k] || `Offer: ${label.toLowerCase()} (${k === "white" ? "no tribute" : "10% of produce for 10 turns"}).`)}" onclick="act({kind:'offer_peace',nation:'${n.id}',terms:'${k}'}).then(renderScreen)">${label}</button> `;
+    } else if (n.id !== S.me.id) {
+      const cost = n.cause ? "a just cause: free" : `${S.me.war_cost} Sway, no cause`;
+      btn += `<button ${n.declare ? "disabled" : ""} data-tip="${esc(n.declare || `Declare war on ${n.name} (${cost}). Trade with them stops; their army strength is ${n.strength}.`)}" onclick="if(confirm('Declare war on ${esc(n.name)}?'))act({kind:'declare_war',nation:'${n.id}'}).then(renderScreen)">Declare war</button>`;
+      if (n.truce) btn += ` <span class="muted small">truce to turn ${n.truce}</span>`;
+    }
+    h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${fmt(n.strength)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
   }
   h += `</table><h3>Your three curves</h3><p class="muted small">Produce per head · labour's share of produce · freedom. Not a score: a record.</p>`;
   h += `<div>${spark(S.me.history, "per_head", "var(--accent)")} ${spark(S.me.history, "labour_share", ORDER_COLOUR.labour)} ${spark(S.me.history, "freedom", "var(--up)")}</div>`;

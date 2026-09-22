@@ -26,6 +26,9 @@ class Node:
     works: list[str] = field(default_factory=list)
     herds: float = 0.0  # herds kept on pastures here
     unrest: float = 0.0
+    siege: dict[str, Any] | None = None  # {"by": nation, "turns": left}
+    revolt_turns: int = 0
+    conquered: int = 0  # turns of conquest unrest left
 
     @property
     def t(self) -> rules.Terrain:
@@ -74,11 +77,20 @@ class Unit:
     herds: float = 0.0
     moves_left: int = 1
     followed: bool = False  # followed wild herds this turn
+    cohesion: float = 100.0
+    age: int = 0  # turns in the field: the host's season, a regiment's drill
+    rebel_of: str | None = None  # rebels: the nation they rose against
+    hold: int = 0  # rebels: turns they have held their node
+    road_used: bool = False  # regiments: the free road step taken this turn
+
+    @property
+    def military(self) -> bool:
+        return rules.UNITS[self.kind].military
 
     def max_moves(self, known: set[str]) -> int:
-        if self.kind == "horde":
+        if self.kind in ("horde", "riders"):
             return 3 if "horsemanship" in known else rules.HORDE_MOVES
-        return rules.BAND_MOVES
+        return rules.UNITS[self.kind].moves
 
 
 @dataclass
@@ -153,6 +165,11 @@ class Nation:
     moments: list[str] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
     feast_ready: int = 0
+    war_weariness: float = 0.0
+    casus_belli: dict[str, int] = field(default_factory=dict)  # nation -> turns left
+    tributes: list[dict[str, Any]] = field(default_factory=list)  # {"to", "turns", "share"} we pay
+    exile_turns: int = 0
+    truce: dict[str, int] = field(default_factory=dict)  # nation -> last turn of the truce
     # figures of the last resolved turn, for display, forecasts and victory
     last: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, float]] = field(default_factory=list)
@@ -191,6 +208,7 @@ class World:
         default_factory=lambda: {"leader": None, "countdown": None, "failing": 0}
     )
     winner: dict[str, Any] | None = None
+    wars: list[dict[str, Any]] = field(default_factory=list)  # {"a", "b", "since", "score": {a, b}}
     _adj: dict[str, list[Edge]] | None = field(default=None, repr=False)
 
     # --- graph helpers --------------------------------------------------------------
@@ -221,7 +239,9 @@ class World:
         return f"{prefix}{self.next_id}"
 
     def units_of(self, nation_id: str) -> list[Unit]:
-        return [u for u in self.units.values() if u.nation == nation_id]
+        """The nation's own units; rebels answer to nobody."""
+
+        return [u for u in self.units.values() if u.nation == nation_id and u.rebel_of is None]
 
     def units_at(self, node_id: str) -> list[Unit]:
         return [u for u in self.units.values() if u.node == node_id]
@@ -239,6 +259,28 @@ class World:
         self, nation: str | None, kind: str, text: str, node: str | None = None, quote: str = ""
     ) -> None:
         self.log.append(Event(self.turn, nation, kind, text, node, quote))
+
+    def war_between(self, a: str, b: str) -> dict[str, Any] | None:
+        for w in self.wars:
+            if {w["a"], w["b"]} == {a, b}:
+                return w
+        return None
+
+    def hostile(self, u: Unit, nation_id: str) -> bool:
+        """Is unit `u` an enemy of `nation_id`? Rebels are enemies of the nation they rose against."""
+
+        if u.rebel_of is not None:
+            return u.rebel_of == nation_id
+        return u.nation != nation_id and self.war_between(u.nation, nation_id) is not None
+
+    def hostile_owner(self, nation_id: str, node: Node) -> bool:
+        """Is `node` held by a people at war with `nation_id`?"""
+
+        return (
+            node.owner is not None
+            and node.owner != nation_id
+            and self.war_between(node.owner, nation_id) is not None
+        )
 
     def player(self) -> Nation | None:
         for n in self.nations.values():

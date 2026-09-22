@@ -174,15 +174,22 @@ def update_unrest(world: World, n: Nation) -> None:
     if n.option("revenue") == "tax_farming":
         tax += 10.0
     hunger = max(0.0, 1.0 - labour.food_sat) * 100.0
+    weariness = min(30.0, 0.5 * n.war_weariness)
     target = clamp(
-        max(0.0, 50.0 - labour.contentment) * 1.5 + hunger + stupor + tax - 5.0 * n.budget.get("justice", 0),
+        max(0.0, 50.0 - labour.contentment) * 1.5
+        + hunger
+        + stupor
+        + tax
+        + weariness
+        - 5.0 * n.budget.get("justice", 0),
         0.0,
         100.0,
     )
     hands = world.hands_of(n.id)
     for nd in world.nodes_of(n.id):
         before = nd.unrest
-        nd.unrest = clamp(0.7 * nd.unrest + 0.3 * target, 0.0, 100.0)
+        local = target + (rules.CONQUEST_UNREST if nd.conquered > 0 else 0.0)
+        nd.unrest = clamp(0.7 * nd.unrest + 0.3 * local, 0.0, 100.0)
         big_enough = (
             nd.hands >= rules.UNREST_EVENT_MIN_HANDS and nd.hands >= rules.UNREST_EVENT_MIN_SHARE * hands
         )

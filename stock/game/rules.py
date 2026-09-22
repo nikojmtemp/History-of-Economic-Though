@@ -24,6 +24,8 @@ def year_of(turn: int) -> int:
     return year
 
 
+MAP_NODES = (30, 60)  # §1 complexity budget: nodes per map
+
 # --- terrain (§5.1) ------------------------------------------------------------------------
 
 
@@ -292,9 +294,9 @@ DIFFUSION_MAX = 0.60
 TAX_RATES = {"light": 0.05, "moderate": 0.10, "heavy": 0.18}
 TAX_UNREST = {"light": 0.0, "moderate": 5.0, "heavy": 15.0}
 BUDGET_LINES = ("justice", "instruction", "court")
-JUSTICE_COST_PER_10_HANDS = 2.0
-INSTRUCTION_COST_PER_10_HANDS = 1.0
-COURT_COST = 3.0
+JUSTICE_COST_PER_10_HANDS = 0.6
+INSTRUCTION_COST_PER_10_HANDS = 0.4
+COURT_COST = 2.0
 
 # --- modes (§8) ------------------------------------------------------------------------------
 
@@ -987,3 +989,176 @@ MOMENT_QUOTES = {
     "mode_commerce": "Consumption is the sole end and purpose of all production.",
     "regression": "Capitals are increased by parsimony, and diminished by prodigality and misconduct.",
 }
+
+
+# --- war (§15) -------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class UnitType:
+    key: str
+    name: str
+    hands: float  # hands per full-strength unit; strength scales with hands carried
+    strength: float
+    moves: int
+    military: bool
+    defence: str | None = None  # the Defence option that raises it (None: always, or not raisable)
+    needs: str | None = None  # discovery
+    wares: float = 0.0
+    treasury: float = 0.0
+    herds: float = 0.0
+    upkeep: float = 0.0  # Treasury per turn
+    raisable: bool = True
+    description: str = ""
+
+
+UNITS: dict[str, UnitType] = {
+    u.key: u
+    for u in (
+        UnitType(
+            "band",
+            "Band",
+            1.0,
+            0.5,
+            1,
+            False,
+            raisable=False,
+            description="A people on the move. It hunts where it stands and defends itself weakly.",
+        ),
+        UnitType(
+            "horde",
+            "Horde",
+            1.0,
+            1.2,
+            2,
+            False,
+            raisable=False,
+            description="A people with its herds. Every herdsman rides: formidable when attacked.",
+        ),
+        UnitType(
+            "warband",
+            "Warband",
+            1.0,
+            3.0,
+            1,
+            True,
+            description="Hunters with spears. Costs nothing but the hand's work while it is away.",
+        ),
+        UnitType(
+            "riders",
+            "Riders",
+            2.0,
+            6.0,
+            2,
+            True,
+            defence="nation_in_arms",
+            herds=10.0,
+            description="Herdsmen on horseback: fast, and deadly in the open. Weak against walls and hills.",
+        ),
+        UnitType(
+            "host",
+            "Feudal Host",
+            2.0,
+            4.0,
+            1,
+            True,
+            defence="feudal_host",
+            description="The lords' retainers called out. Free to the state; goes home after 4 turns.",
+        ),
+        UnitType(
+            "militia",
+            "Militia",
+            2.0,
+            5.0,
+            1,
+            True,
+            defence="militia",
+            wares=5.0,
+            description="Citizens drilled part-time. Cheap; dulled by divided labour.",
+        ),
+        UnitType(
+            "regiment",
+            "Regiment",
+            2.0,
+            7.0,
+            1,
+            True,
+            defence="standing",
+            needs="standing_army",
+            wares=10.0,
+            treasury=10.0,
+            upkeep=3.0,
+            description="Paid soldiers. Improves with drill; moves faster on roads.",
+        ),
+        UnitType(
+            "musketeers",
+            "Musketeers",
+            2.0,
+            10.0,
+            1,
+            True,
+            defence="standing",
+            needs="firearms",
+            wares=20.0,
+            treasury=10.0,
+            upkeep=4.0,
+            description="Regiments with firearms: they prevail over everything else. Needs a Foundry.",
+        ),
+        UnitType(
+            "rebels",
+            "Rebels",
+            1.0,
+            1.3,
+            1,
+            True,
+            raisable=False,
+            description="Men in revolt. If they hold their node for 3 turns it breaks away.",
+        ),
+    )
+}
+
+#: attacker -> defender multipliers (§15.3); unlisted pairs are 1.0
+MATCHUP: dict[str, dict[str, float]] = {
+    "riders": {"warband": 1.5, "band": 1.5, "host": 1.3, "militia": 1.3, "musketeers": 0.6},
+    "host": {"warband": 1.3, "band": 1.3, "riders": 0.8, "horde": 0.8, "regiment": 0.8, "musketeers": 0.6},
+    "militia": {"warband": 1.3, "band": 1.3, "riders": 0.8, "horde": 0.8, "regiment": 0.9, "musketeers": 0.7},
+    "regiment": {"warband": 1.5, "band": 1.5, "host": 1.2, "militia": 1.2, "rebels": 1.2, "musketeers": 0.8},
+    "musketeers": {
+        "warband": 1.8,
+        "band": 1.8,
+        "riders": 1.5,
+        "horde": 1.5,
+        "host": 1.5,
+        "militia": 1.5,
+        "rebels": 1.5,
+        "regiment": 1.2,
+    },
+}
+RIDERS_ROUGH = 0.7  # riders against hills, marsh, mountain or walls
+RIDERS_OPEN = 1.1  # riders on grassland
+FORT_BONUS = 0.5  # defence per fort level
+SETTLED_LEVY = 0.5  # strength per settled hand defending its home
+BATTLE_LUCK = 0.15
+CASUALTY_RATE = 0.2  # share of hands lost at the worst outcome
+COHESION_LOSS = 40.0
+COHESION_RECOVERY = 15.0
+BROKEN_COHESION = 20.0
+SUPPLY_RANGE = 2  # edges from a friendly settled node
+SUPPLY_LOSS = 15.0
+SIEGE_TURNS_PER_FORT = 2
+SIEGE_ATTRITION = 10.0
+HOST_SEASON = 4
+DRILL_TURNS = 5  # a regiment gains +1 strength per this many turns, up to +3
+WAR_COST = 15.0  # Sway, without a casus belli
+CASUS_BELLI_TURNS = 10
+PEACE_MIN_TURNS = 3
+TRUCE_TURNS = 15
+TRIBUTE_SHARE = 0.10
+TRIBUTE_TURNS = 10
+REBEL_HOLD_TURNS = 3
+REVOLT_UNREST = 90.0
+CONQUEST_UNREST = 30.0
+PLUNDER_UNREST = 50.0
+RAZE_MAX_HANDS = 3.0
+EXILE_HANDS = 2.0
+EXILE_MAX_TURNS = 10

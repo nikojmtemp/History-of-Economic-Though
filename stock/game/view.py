@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stock.game import actions, economy, politics, research, rules, trade, victory
+from stock.game import actions, economy, military, politics, research, rules, trade, victory
 from stock.game.state import Nation, Unit, World
 
 
@@ -17,21 +17,64 @@ def _r(x: float, nd: int = 2) -> float:
 
 
 def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
+    t = rules.UNITS[u.kind]
     out: dict[str, Any] = {
         "id": u.id,
         "nation": u.nation,
         "kind": u.kind,
+        "name": t.name,
         "node": u.node,
         "hands": _r(u.hands, 1),
         "herds": _r(u.herds, 0),
+        "military": t.military,
+        "strength": _r(military.unit_strength(world, u), 1),
+        "cohesion": _r(u.cohesion, 0),
+        "rebel": u.rebel_of is not None,
+        "hostile": world.hostile(u, n.id),
     }
-    if u.nation != n.id:
+    if u.nation != n.id or u.rebel_of is not None:
         return out
     moves = []
     for e in world.edges_of(u.node):
         to = e.other(u.node)
         why = actions.check(world, n, {"kind": "move", "unit": u.id, "to": to})
-        moves.append({"to": to, "ok": why is None, "why": why, "cost": e.cost()})
+        m: dict[str, Any] = {"to": to, "ok": why is None, "why": why, "cost": e.cost()}
+        if why is None and actions.hostile_at(world, n, to):
+            m["attack"] = _r(military.odds(world, u, world.nodes[to]))
+        moves.append(m)
+    raids = []
+    if u.kind in ("warband", "riders", "horde"):
+        for to in world.neighbours(u.node):
+            if military.raid_blocker(world, n, u, to) is None:
+                nd = world.nodes[to]
+                victim = (
+                    nd.owner
+                    if nd.owner not in (None, n.id)
+                    else next(
+                        (x.nation for x in world.units_at(to) if x.nation != n.id and x.rebel_of is None),
+                        None,
+                    )
+                )
+                raids.append(
+                    {"to": to, "victim": victim, "odds": _r(military.odds(world, u, nd, victim=victim))}
+                )
+    raise_opts = []
+    if not t.military:
+        for kind in ("warband", "riders"):
+            raise_opts.append(
+                {
+                    "kind": kind,
+                    "name": rules.UNITS[kind].name,
+                    "why": military.raise_blocker(world, n, u, kind),
+                }
+            )
+    out.update(
+        raids=raids,
+        raise_options=raise_opts,
+        supplied=military.supplied(world, u),
+        upgrade=military.upgrade_blocker(world, n, u) if u.kind == "regiment" else None,
+        description=t.description,
+    )
     verbs = {}
     for kind in ("split", "follow", "tame", "settle"):
         verbs[kind] = actions.check(world, n, {"kind": kind, "unit": u.id})
@@ -79,6 +122,10 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
             game=_r(nd.game),
             unrest=_r(nd.unrest, 0),
             slots=nd.slots(),
+            siege=nd.siege,
+            conquered=nd.conquered,
+            forts=nd.works.count("fort"),
+            enemy=world.hostile_owner(n.id, nd),
         )
     if nd.owner == n.id:
         buildable = []
@@ -98,6 +145,22 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
             buildable.append(entry)
         out["buildable"] = buildable
         out["found_band"] = actions.check(world, n, {"kind": "found_band", "node": nd.id})
+        out["raise_options"] = [
+            {
+                "kind": k,
+                "name": ut.name,
+                "why": military.raise_blocker(world, n, nd, k),
+                "hands": ut.hands,
+                "wares": ut.wares,
+                "treasury": ut.treasury,
+                "herds": ut.herds,
+                "upkeep": ut.upkeep,
+                "strength": ut.strength,
+                "description": ut.description,
+            }
+            for k, ut in rules.UNITS.items()
+            if ut.raisable
+        ]
         jobs = sum(rules.WORKS[w].jobs for w in nd.works)
         out["jobs"] = jobs
     return out
@@ -219,6 +282,20 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
                 barter=None if o.id == n.id else actions.check(world, n, {"kind": "barter", "nation": o.id}),
                 trading=trade.route_between(world, n.id, o.id) is not None,
                 history=o.history[-150:],
+                at_war=military.at_war(world, n.id, o.id),
+                war_score=_r(military.war_score(world, n, o.id), 0),
+                strength=_r(military.military_strength(world, o.id), 1),
+                cause=o.id in n.casus_belli,
+                truce=n.truce.get(o.id, 0) if n.truce.get(o.id, 0) >= world.turn else 0,
+                declare=None
+                if o.id == n.id
+                else actions.check(world, n, {"kind": "declare_war", "nation": o.id}),
+                peace={
+                    terms: actions.check(world, n, {"kind": "offer_peace", "nation": o.id, "terms": terms})
+                    for terms in ("white", "tribute", "submit")
+                }
+                if o.id != n.id
+                else {},
             )
         nations.append(entry)
     edges = [{"a": e.a, "b": e.b, "kind": e.kind} for e in world.edges if e.a in explored and e.b in explored]
@@ -309,6 +386,9 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "moments": n.moments,
             "route_slots": trade.route_slots(world, n),
             "routes": trade.route_count(world, n.id),
+            "war": military.summary(world, n),
+            "defence": n.option("defence"),
+            "war_cost": rules.WAR_COST,
         },
         "nations": nations,
         "nodes": [_node(world, n, nid, vis) for nid in sorted(explored)],
@@ -328,6 +408,20 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             }
             for w in rules.WORKS.values()
         ],
+        "unit_types": {
+            k: {
+                "kind": k,
+                "name": t.name,
+                "hands": t.hands,
+                "strength": t.strength,
+                "wares": t.wares,
+                "treasury": t.treasury,
+                "herds": t.herds,
+                "upkeep": t.upkeep,
+                "description": t.description,
+            }
+            for k, t in rules.UNITS.items()
+        },
         "log": log,
         "modes": [rules.MODE_NAMES[m] for m in rules.MODES],
     }
