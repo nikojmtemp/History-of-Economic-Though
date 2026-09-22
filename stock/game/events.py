@@ -60,7 +60,7 @@ def roll(world: World, n: Nation) -> None:
 
 
 def world_events(world: World) -> None:
-    if world.rng.random() >= HERDS_MIGRATE:
+    if world.turn < 30 or world.rng.random() >= HERDS_MIGRATE:  # the opening's herds stay put
         return
     herds = [nd for nd in world.nodes.values() if "wild_herds" in nd.features]
     open_ground = [

@@ -181,13 +181,15 @@ function renderMap() {
       fill = centre ? nations[centre]?.colour || fill : nations[n.owner]?.colour || fill;
       stroke = nations[n.owner]?.colour || stroke; sw = 4;
     }
-    const feats = (n.features || []).map((f) => ({ wild_herds: "≈", rare: "✦", ore: "▲", coal: "■" }[f])).join("");
+    const feats = (n.features || []).filter((f) => f !== "wild_herds").map((f) => ({ rare: "✦", ore: "▲", coal: "■" }[f])).join("");
+    const herdMark = (n.features || []).includes("wild_herds")
+      ? `<text class="herd-mark" x="${n.x}" y="${n.y - r - (feats ? 13 : 3)}" text-anchor="middle">wild herds</text>` : "";
     const works = n.works ? n.works.length : 0;
     svg.push(`<g class="node ${n.visible ? "" : "fog"}" data-node="${n.id}" data-tip="${esc(nodeTip(n))}">
       <circle class="body" cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
       ${n.owner && works ? `<text class="node-sub" x="${n.x}" y="${n.y + 3}" text-anchor="middle">${works}⌂</text>` : ""}
       <text class="node-label" x="${n.x}" y="${n.y + r + 11}" text-anchor="middle">${esc(n.name)}</text>
-      ${feats ? `<text class="node-sub" x="${n.x}" y="${n.y - r - 3}" text-anchor="middle">${feats}</text>` : ""}
+      ${feats ? `<text class="node-sub" x="${n.x}" y="${n.y - r - 3}" text-anchor="middle">${feats}</text>` : ""}${herdMark}
     </g>`);
     if (reach.has(n.id)) svg.push(`<circle class="reach" cx="${n.x}" cy="${n.y}" r="${r + 6}"/>`);
     if (strike[n.id] != null) svg.push(`<circle class="strike" cx="${n.x}" cy="${n.y}" r="${r + 6}"/><text class="odds" x="${n.x}" y="${n.y - r - 12}" text-anchor="middle">${pct(strike[n.id])}</text>`);
@@ -475,6 +477,11 @@ function currentHint() {
   if (S.turn > 60) return null;
   if (!me.researching) return "Choose a discovery: click the line under this box, or press D. Taming and Tillage open the way out of the hunt.";
   if (band && node && node.game != null && node.game < 0.45 && !settled) return `The game at ${node.name} is thinning (${pct(node.game)} left). Select your band and click a ringed neighbour to move on.`;
+  if (band && node && !node.features.includes("wild_herds") && !known("taming") && me.mode === "hunting") {
+    const herds = nearestHerds(band.node);
+    if (herds) return `Wild herds graze at ${herds.name} (marked "wild herds" on the map). Take your band there and choose Follow the herds: three turns of it halves the cost of Taming.`;
+    return "No wild herds in sight. Explore: they graze on open grassland and hills.";
+  }
   if (band && node && node.features.includes("wild_herds") && !known("taming") && !band.followed) return "Wild herds graze here. Select your band and choose Follow the herds: three turns of it halves the cost of Taming.";
   if (band && node && node.features.includes("wild_herds") && known("taming")) return "You know Taming, and wild herds are here: select your band and choose Tame to become a horde.";
   if (band && known("tillage") && !settled) return "You know Tillage. Take a band to a river valley or coast and choose Settle: fields grow far more than the hunt.";
@@ -489,6 +496,19 @@ function renderHint() {
   const box = $("hint");
   box.hidden = !h;
   if (h) box.innerHTML = `<span>${esc(h)}</span> <button class="small" title="No more hints" onclick="hintsOff=true;try{localStorage.setItem('stock-hints','off')}catch(e){};renderHint()">✕</button>`;
+}
+
+function nearestHerds(from) {
+  const adj = {};
+  for (const e of S.edges) if (e.kind !== "sea") { (adj[e.a] ||= []).push(e.b); (adj[e.b] ||= []).push(e.a); }
+  const seen = new Set([from]);
+  let frontier = [from];
+  while (frontier.length) {
+    const hit = frontier.map((x) => S.nodes.find((n) => n.id === x)).find((n) => n && n.features.includes("wild_herds"));
+    if (hit) return hit;
+    frontier = frontier.flatMap((x) => adj[x] || []).filter((x) => !seen.has(x) && seen.add(x));
+  }
+  return null;
 }
 
 // armies are supplied within two steps of our towns, and riders on open grazing
@@ -651,7 +671,7 @@ function screenBook() {
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
-    ["Keys", "Enter ends the turn. Tab selects your next unit. D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+    ["Keys", "Space or Enter ends the turn. Tab selects your next unit. D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
   );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
@@ -704,8 +724,11 @@ $("regent").addEventListener("click", async () => {
 });
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
-  if (e.key === "Enter" && !$("moment").hidden) { $("moment").hidden = true; return; }
-  if (e.key === "Enter") endTurn();
+  const endKey = e.key === "Enter" || e.key === " " || e.code === "Space";
+  if (endKey) e.preventDefault();  // Space would otherwise also press the focused button
+  if (endKey && !$("moment").hidden) { $("moment").hidden = true; return; }
+  if (endKey && screen) return;  // not while a screen is open
+  if (endKey) endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
   if (e.key === "?") { screen = "book"; renderScreen(); }
   const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];

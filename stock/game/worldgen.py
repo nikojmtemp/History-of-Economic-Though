@@ -312,6 +312,20 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
         pool = [i for i in good if i not in starts] or [i for i in range(n) if i not in starts]
         starts.append(max(pool, key=lambda i: min(math.dist(points[i], points[s]) for s in starts)))
 
+    # every people can find wild herds within two steps of home (§5.4)
+    for s in starts:
+        ring1 = set(nb[s])
+        ring2 = {k for j in ring1 for k in nb[j]} - {s}
+        if any("wild_herds" in feats[k] for k in {s} | ring1 | ring2):
+            continue
+        grazing = [
+            k
+            for k in sorted(ring1) + sorted(ring2 - ring1)
+            if not rules.TERRAIN[terrain[k]].rough and rules.TERRAIN[terrain[k]].grazing >= 0.6
+        ]
+        pick = grazing[0] if grazing else sorted(ring1)[0]
+        feats[pick].append("wild_herds")
+
     world = World(seed=cfg.seed, spec=spec_for(cfg), nodes=nodes, edges=edges, nations={})
     world.rng = random.Random(cfg.seed * 7919 + 1)
     for k, i in enumerate(starts):

@@ -253,3 +253,12 @@ def test_demolishing_frees_a_slot() -> None:
     assert actions.act(w, me, {"kind": "demolish", "node": node.id, "work": "fields"}) is None
     assert len(node.works) == len(before) - 1
     assert actions.check(w, n, {"kind": "demolish", "node": node.id, "work": "bank"}) == "no such work there"
+
+
+@pytest.mark.parametrize("seed", range(1, 41))
+def test_every_people_has_wild_herds_within_two_steps(seed: int) -> None:
+    w = generate(seed=seed)
+    for u in w.units.values():
+        near = {u.node} | set(w.neighbours(u.node))
+        near |= {y for x in list(near) for y in w.neighbours(x)}
+        assert any("wild_herds" in w.nodes[x].features for x in near), (seed, u.nation)

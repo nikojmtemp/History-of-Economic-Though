@@ -47,6 +47,7 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 #overlays { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; }
 #overlays button { padding: 2px 8px; font-size: 11px; }
 .node-label { font: 10px var(--serif); fill: var(--ink); pointer-events: none; }
+.herd-mark { font: bold 9px var(--sans); fill: #b8862b; pointer-events: none; letter-spacing: .03em; }
 .node-sub { font: 9px var(--sans); fill: var(--ink-2); pointer-events: none; }
 .edge-path { stroke: var(--ink-2); stroke-width: 1; opacity: .55; }
 .edge-rough { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
