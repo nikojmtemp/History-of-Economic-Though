@@ -82,6 +82,7 @@ class Unit:
     rebel_of: str | None = None  # rebels: the nation they rose against
     hold: int = 0  # rebels: turns they have held their node
     road_used: bool = False  # regiments: the free road step taken this turn
+    home: str | None = None  # traders: the market town or port they set out from
 
     @property
     def military(self) -> bool:
@@ -97,9 +98,15 @@ class Unit:
 class Route:
     id: str
     kind: str  # barter | caravan | sea
-    a: str  # nation ids
+    a: str  # the nation that opened it (its merchants take the profit)
     b: str
     capacity: float
+    a_node: str | None = None  # endpoints (barter routes have none)
+    b_node: str | None = None
+    hops: int = 1
+    active: bool = True
+    flows: dict[str, float] = field(default_factory=dict)  # good -> quantity, + from a to b, - from b to a
+    profit: float = 0.0
 
 
 @dataclass
@@ -170,6 +177,8 @@ class Nation:
     tributes: list[dict[str, Any]] = field(default_factory=list)  # {"to", "turns", "share"} we pay
     exile_turns: int = 0
     truce: dict[str, int] = field(default_factory=dict)  # nation -> last turn of the truce
+    embargo: dict[str, int] = field(default_factory=dict)  # nation -> last turn of our embargo on them
+    trade: dict[str, Any] = field(default_factory=dict)  # this turn's imports, exports, profit, tolls
     # figures of the last resolved turn, for display, forecasts and victory
     last: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, float]] = field(default_factory=list)
@@ -209,6 +218,7 @@ class World:
     )
     winner: dict[str, Any] | None = None
     wars: list[dict[str, Any]] = field(default_factory=list)  # {"a", "b", "since", "score": {a, b}}
+    treaties: list[dict[str, Any]] = field(default_factory=list)  # {"kind", "a", "b", "since"}
     _adj: dict[str, list[Edge]] | None = field(default=None, repr=False)
 
     # --- graph helpers --------------------------------------------------------------
@@ -272,6 +282,12 @@ class World:
         if u.rebel_of is not None:
             return u.rebel_of == nation_id
         return u.nation != nation_id and self.war_between(u.nation, nation_id) is not None
+
+    def treaty(self, kind: str, a: str, b: str) -> dict[str, Any] | None:
+        for t in self.treaties:
+            if t["kind"] == kind and {t["a"], t["b"]} == {a, b}:
+                return t
+        return None
 
     def hostile_owner(self, nation_id: str, node: Node) -> bool:
         """Is `node` held by a people at war with `nation_id`?"""

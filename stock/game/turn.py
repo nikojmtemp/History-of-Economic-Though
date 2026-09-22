@@ -31,6 +31,7 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
     # 2–7. production (hunting is shared across nations), then each nation's year
     plans = {n.id: economy.plan_labour(world, n) for n in living}
     economy.resolve_hunting(world, plans)
+    trade.resolve_flows(world)
     for n in living:
         figures = economy.run_nation(world, n, plans[n.id])
         spent = economy.spend_budget(world, n)
@@ -38,6 +39,8 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
             n.counters["deficit"] = 1.0
         figures["spent"] = spent
         n.last.update(figures)
+        n.last["dependence"] = trade.dependence(world, n)
+        n.last["food_dependence"] = trade.food_dependence(world, n)
 
     # armies: upkeep, supply, sieges, the host's season, rebels, tribute
     military.tick(world)

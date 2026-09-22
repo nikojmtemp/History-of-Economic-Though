@@ -92,7 +92,11 @@ def odds(world: World, att: Unit, nd: Node, victim: str | None = None) -> float:
     """The share of the field the attacker can expect, before luck (0..1)."""
 
     units = defenders(world, att.nation, nd, victim)
-    d_power, primary = _defence_power(world, att, nd, units, victim)
+    if att.kind == "fleet":  # as in battle(): ships fight ships, nothing else
+        units = [u for u in units if u.kind == "fleet"]
+        d_power, primary = sum(unit_strength(world, u) for u in units), "fleet"
+    else:
+        d_power, primary = _defence_power(world, att, nd, units, victim)
     a_power = unit_strength(world, att) * _matchup(att, primary, nd)
     if a_power + d_power <= 0:
         return 1.0
@@ -106,8 +110,11 @@ def at_war(world: World, a: str, b: str) -> bool:
     return world.war_between(a, b) is not None
 
 
-def declare_war(world: World, n: Nation, target: Nation) -> None:
-    free = target.id in n.casus_belli
+def declare_war(world: World, n: Nation, target: Nation, *, called: bool = False) -> None:
+    from stock.game import trade  # trade does not import military; this keeps it that way
+
+    free = target.id in n.casus_belli or called
+    trade.break_treaties(world, n, target)
     world.wars.append({"a": n.id, "b": target.id, "since": world.turn, "score": {n.id: 0.0, target.id: 0.0}})
     n.relations[target.id] = min(n.relations.get(target.id, 0.0), 0.0) - 50.0
     target.relations[n.id] = min(target.relations.get(n.id, 0.0), 0.0) - 50.0
@@ -115,9 +122,20 @@ def declare_war(world: World, n: Nation, target: Nation) -> None:
     for rid, r in list(world.routes.items()):
         if {r.a, r.b} == {n.id, target.id}:
             del world.routes[rid]
-    why = "with a just cause" if free else "without a cause, at a cost in Sway"
+    why = (
+        "honouring an alliance"
+        if called
+        else "with a just cause"
+        if free
+        else "without a cause, at a cost in Sway"
+    )
     world.emit(n.id, "war", f"We declare war on {target.name}, {why}.")
     world.emit(target.id, "war", f"{n.name} declares war on us.")
+    if not called:  # the defender's allies come to its aid
+        for ally_id in trade.allies_of(world, target.id):
+            ally = world.nations[ally_id]
+            if ally.alive and ally_id != n.id and not at_war(world, ally_id, n.id) and n.id in ally.contacts:
+                declare_war(world, ally, n, called=True)
 
 
 def make_peace(world: World, a: Nation, b: Nation, tribute_from: str | None) -> None:
@@ -205,6 +223,8 @@ def raise_blocker(world: World, n: Nation, source: Node | Unit, kind: str) -> st
         return f"needs {rules.DISCOVERIES[t.needs].name}" if t.needs else "locked"
     if kind == "musketeers" and not any("foundry" in nd.works for nd in world.nodes_of(n.id)):
         return "needs a Foundry"
+    if kind == "fleet" and (not isinstance(source, Node) or "port" not in source.works):
+        return "built at a Port"
     if kind == "host":
         if n.retainers < t.hands:
             return f"needs {t.hands:.0f} retainers"
@@ -298,10 +318,15 @@ def _retreat(world: World, u: Unit) -> bool:
 
 
 def battle(world: World, att: Unit, nd: Node, victim: str | None = None) -> bool:
-    """Resolve `att` attacking `nd`. Returns True if the attacker holds the field."""
+    """Resolve `att` attacking `nd`. Returns True if the attacker holds the field.
+    Fleets fight only fleets, on open water: no walls, no levy."""
 
     units = defenders(world, att.nation, nd, victim)
-    d_power, primary = _defence_power(world, att, nd, units, victim)
+    if att.kind == "fleet":
+        units = [u for u in units if u.kind == "fleet"]
+        d_power, primary = sum(unit_strength(world, u) for u in units), "fleet"
+    else:
+        d_power, primary = _defence_power(world, att, nd, units, victim)
     a_power = unit_strength(world, att) * _matchup(att, primary, nd)
     a = a_power * (1.0 + world.rng.uniform(-rules.BATTLE_LUCK, rules.BATTLE_LUCK))
     d = d_power * (1.0 + world.rng.uniform(-rules.BATTLE_LUCK, rules.BATTLE_LUCK))
@@ -311,7 +336,7 @@ def battle(world: World, att: Unit, nd: Node, victim: str | None = None) -> bool
     d_lost = 0.0
     for u in units:
         d_lost += _casualties(world, u, rules.CASUALTY_RATE * share)
-    if _levy(world, att.nation, nd, victim):
+    if att.kind != "fleet" and _levy(world, att.nation, nd, victim):
         levy_loss = nd.hands * rules.CASUALTY_RATE * share * 0.3
         nd.hands = max(1.0, nd.hands - levy_loss)
         d_lost += levy_loss
@@ -358,6 +383,14 @@ def advance(world: World, att: Unit, to: str) -> str:
     Returns a short outcome: "moved", "won", "lost", "siege", "captured"."""
 
     nd = world.nodes[to]
+    if att.kind == "fleet":  # at sea: fight enemy fleets, then lie off the port (a blockade)
+        if any(u.kind == "fleet" and world.hostile(u, att.nation) for u in world.units_at(to)):
+            won = battle(world, att, nd)
+            if att.id not in world.units or not won:
+                return "lost"
+            att.moves_left = 0
+        att.node = to
+        return "moved"
     hostile_units = any(world.hostile(u, att.nation) for u in world.units_at(to))
     hostile_node = nd.owner is not None and world.hostile_owner(att.nation, nd)
     if not hostile_units and not hostile_node:
@@ -567,6 +600,8 @@ def supplied(world: World, u: Unit) -> bool:
         return True
     if u.kind in ("riders", "horde") and world.nodes[u.node].t.grazing >= 0.6:
         return True
+    if u.kind == "fleet":  # victualled from any of our ports
+        return any("port" in nd.works for nd in world.nodes_of(u.nation))
     frontier, seen = {u.node}, {u.node}
     for _ in range(rules.SUPPLY_RANGE + 1):
         if any(world.nodes[x].owner == u.nation for x in frontier):

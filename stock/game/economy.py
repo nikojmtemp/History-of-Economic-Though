@@ -64,7 +64,7 @@ def extent_of(world: World, n: Nation) -> float:
     towns = sum(nd.works.count("market") for nd in world.nodes_of(n.id))
     route_part = 0.0
     for r in world.routes.values():
-        if n.id in (r.a, r.b):
+        if n.id in (r.a, r.b) and r.active:
             partner = r.b if r.a == n.id else r.a
             share = rules.ROUTE_EXTENT_SHARE * (1.5 if n.option("commerce") == "free_trade" else 1.0)
             route_part += share * min(world.hands_of(partner), r.capacity * rules.ROUTE_EXTENT_PER_CAPACITY)
@@ -98,6 +98,7 @@ class Job:
     wares: float = 0.0
     luxuries: float = 0.0
     herd_growth: float = 0.0  # head of herd added
+    service: float = 0.0  # a market town's trade, in baskets: produce, but no goods to consume
     cost: float = 0.0  # stock in the work (for profit)
     source: str = "hunting"  # hunting | pasturage | agriculture | commerce
     paid: str = "labour"  # labour | herds | land | stock
@@ -131,7 +132,8 @@ def _owners(world: World, n: Nation) -> dict[str, float]:
     props = 0.0
     if _private_herds(n) and land_hands > 0:
         props = max(0.2, rules.PROPRIETOR_OWNER_SHARE * land_hands)
-    stock = rules.STOCK_OWNERS_PER_WORK * stock_works
+    merchants = sum(1 for r in world.routes.values() if r.a == n.id and r.kind != "barter")
+    stock = rules.STOCK_OWNERS_PER_WORK * (stock_works + merchants)
     return {"proprietors": props, "stock": stock}
 
 
@@ -183,11 +185,12 @@ def _work_jobs(
                 per["luxuries"] = 0.4 * mult
         elif w == "market":
             # a market town's trade grows with the market it serves
-            per = {"wares": work.makes["wares"] + 0.02 * extent}
+            # a market town sells no goods of its own: its trade grows with the market it serves
+            per = {"service": rules.MARKET_SERVICE_PER_EXTENT * extent}
         else:
             per = dict(work.makes)
         per = {g: q * prod for g, q in per.items()}
-        value = sum(q * n.prices[g] for g, q in per.items())
+        value = sum(q * (n.prices[g] if g in n.prices else 1.0) for g, q in per.items())
         if w == "pasture":
             value += rules.HERD_GROWTH * rules.HERDS_PER_HERDSMAN * rules.HERD_VALUE
         out.append((w, jobs, per, value))
@@ -221,6 +224,7 @@ def plan_labour(world: World, n: Nation) -> Plan:
             work = rules.WORKS[w]
             job = Job(nd.id, w, take, cost=work.cost * take / max(work.jobs, 1))
             job.food, job.wares, job.luxuries = (per.get(g, 0.0) * take for g in rules.GOODS)
+            job.service = per.get("service", 0.0) * take
             if w == "pasture":
                 job.source, job.paid = "pasturage", "herds"
             elif work.paid == "land":
@@ -341,7 +345,13 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
             + j.wares * p["wares"]
             + j.luxuries * p["luxuries"]
             + (j.herd_growth * rules.HERD_VALUE)
+            + j.service
         )
+    # trade (§11): the merchants' margin on routes we opened is commerce produce
+    tr = n.trade or {}
+    merchant_profit = float(tr.get("profit", 0.0))
+    barter_gain = float(tr.get("barter", 0.0))
+    sources["commerce"] += merchant_profit + barter_gain
     produce = sum(sources.values())
 
     # the split: wages first, profit next, rent last (§10.1)
@@ -370,6 +380,7 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
             + j.wares * p["wares"]
             + j.luxuries * p["luxuries"]
             + (j.herd_growth * rules.HERD_VALUE)
+            + j.service
         )
         if value <= 0:
             continue
@@ -397,6 +408,8 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
                 pay(owner, "rent", rest - profit)
             else:
                 pay("labour", "rent", rest - profit)
+    pay("stock", "profit", merchant_profit)
+    pay("labour", "wages", barter_gain)  # a band's barter profits its people
 
     # taxes (§14.1–14.2): nominal payer vs actual payer
     nominal = {o: 0.0 for o in rules.ORDERS}
@@ -428,7 +441,7 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
                 share = income[o] / produce if produce > 0 else 0.0
                 nominal[o] = actual[o] = assessed * 0.9 * share
         elif rev == "customs":
-            base = sum(rt.capacity for rt in world.routes.values() if n.id in (rt.a, rt.b)) * 2.0
+            base = float(tr.get("value", 0.0))
             levy = rate * base * eff
             nominal["stock"] = levy
             actual["stock"] = levy * 0.5
@@ -446,7 +459,40 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
             collected -= cut
         n.treasury += collected
 
-    tax = {"collected": collected, "nominal": nominal, "actual": actual}
+    # trade policy (§11.4): tariffs are paid by consumers; tolls and bounties are transfers
+    transfers = 0.0
+    tariff = float(tr.get("tariff", 0.0))
+    if tariff > 0 and n.seat == "civil":
+        total_income = sum(max(0.0, v) for v in income.values())
+        take_all = min(tariff, total_income)
+        for o in rules.ORDERS:
+            share = max(0.0, income[o]) / total_income if total_income > 0 else 0.0
+            income[o] -= take_all * share
+            actual[o] += take_all * share
+        nominal["stock"] += take_all
+        n.treasury += take_all
+        collected += take_all
+    tolls = float(tr.get("tolls", 0.0))
+    if tolls > 0:
+        if n.seat == "civil":
+            n.treasury += tolls
+        else:
+            income["proprietors"] += tolls
+            transfers += tolls
+    bounty = min(float(tr.get("bounty", 0.0)), n.treasury) if n.seat == "civil" else 0.0
+    if bounty > 0:
+        n.treasury -= bounty
+        income["stock"] += bounty
+        transfers += bounty
+
+    tax = {
+        "collected": collected,
+        "nominal": nominal,
+        "actual": actual,
+        "tariff": tariff,
+        "tolls": tolls,
+        "bounty": bounty,
+    }
 
     # order sizes
     size = {
@@ -462,7 +508,12 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
 
     # consumption (§10.2–10.3)
     lux_price = p["luxuries"] * (0.75 if n.mode == "commerce" else 1.0)
-    supply = {g: made[g] + n.store[g] for g in rules.GOODS}
+    imports = tr.get("imports", {})
+    exports = tr.get("exports", {})
+    supply = {
+        g: max(0.0, made[g] + n.store[g] + float(imports.get(g, 0.0)) - float(exports.get(g, 0.0)))
+        for g in rules.GOODS
+    }
     want = {o: {g: 0.0 for g in rules.GOODS} for o in rules.ORDERS}
     need = {o: {"food": 0.0, "comfort": 0.0} for o in rules.ORDERS}
     savings = {o: 0.0 for o in rules.ORDERS}
@@ -598,7 +649,8 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
 
     # population (§20): grows with food, shrinks with hunger
     food_need = hands + 0.0
-    food_ratio = clamp((made["food"] + n.store["food"] * 0.5) / food_need, 0.0, 2.0) if food_need > 0 else 1.0
+    net_food = made["food"] + float(imports.get("food", 0.0)) - float(exports.get("food", 0.0))
+    food_ratio = clamp((net_food + n.store["food"] * 0.5) / food_need, 0.0, 2.0) if food_need > 0 else 1.0
     fed = ration["food"]
     growth = clamp(rules.GROWTH_PER_SURPLUS * (min(food_ratio, 1.6) - 1.0), *rules.GROWTH_CLAMP)
     if fed < 0.999:
@@ -608,12 +660,13 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
     for nd in world.nodes_of(n.id):
         nd.hands = max(1.0, nd.hands * (1.0 + growth))
     for u in world.units_of(n.id):
-        u.hands = max(1.0, u.hands * (1.0 + growth))
+        if u.kind in ("band", "horde"):  # armies and traders do not breed
+            u.hands = max(1.0, u.hands * (1.0 + growth))
 
     # prices for next turn (§9.8)
     for g in rules.GOODS:
         d = demand_total[g]
-        s_ = made[g] + n.store[g]
+        s_ = supply[g]
         if d <= 0 and s_ <= 0:
             continue
         ratio = (d + 0.01) / (s_ + 0.01)
@@ -645,6 +698,9 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
         "open_jobs": plan.open_jobs,
         "filled_jobs": plan.filled_jobs,
         "lux_share": lux_share,
+        "transfers": transfers,
+        "trade": {k: v for k, v in tr.items()},
+        "supply": supply,
     }
 
 

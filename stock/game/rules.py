@@ -140,9 +140,10 @@ WORKS: dict[str, Work] = {
             "fairs",
             2,
             25.0,
-            {"wares": 0.3},
+            {},
             "stock",
-            description="Extent +3, Ingenuity +2, one more trade route.",
+            description="The town's trade: earns with the Extent of the market. Extent +3, Ingenuity +2, "
+            "one more trade route, and caravans set out from here.",
         ),
         Work(
             "port",
@@ -231,6 +232,7 @@ SERF_PRODUCTIVITY = 0.75
 # --- extent and division of labour (§9.4) --------------------------------------------------
 
 EXTENT_PER_MARKET_TOWN = 3.0
+MARKET_SERVICE_PER_EXTENT = 0.03  # baskets of trade per market-town job per unit of Extent
 ROUTE_EXTENT_SHARE = 0.5
 ROUTE_EXTENT_PER_CAPACITY = 10.0
 
@@ -1105,6 +1107,41 @@ UNITS: dict[str, UnitType] = {
             description="Regiments with firearms: they prevail over everything else. Needs a Foundry.",
         ),
         UnitType(
+            "caravan",
+            "Caravan",
+            0.5,
+            0.0,
+            2,
+            False,
+            needs="fairs",
+            raisable=False,
+            description="Merchants with pack animals. Walk it to a foreign town and open a land route there.",
+        ),
+        UnitType(
+            "merchantman",
+            "Merchantman",
+            0.5,
+            0.0,
+            3,
+            False,
+            needs="sail",
+            raisable=False,
+            description="A trading ship. Sail it to a foreign port and open a sea route there.",
+        ),
+        UnitType(
+            "fleet",
+            "Fleet",
+            2.0,
+            6.0,
+            3,
+            True,
+            needs="sail",
+            wares=20.0,
+            treasury=10.0,
+            upkeep=3.0,
+            description="Warships. Fights other fleets; blockades an enemy's port and the routes through it.",
+        ),
+        UnitType(
             "rebels",
             "Rebels",
             1.0,
@@ -1162,3 +1199,63 @@ PLUNDER_UNREST = 50.0
 RAZE_MAX_HANDS = 3.0
 EXILE_HANDS = 2.0
 EXILE_MAX_TURNS = 10
+
+
+# --- trade (§11) --------------------------------------------------------------------------------
+
+TRADE_TOWN_PREMIUM = 0.08  # return merchants expect from a town's trade, beyond its own output
+TRADER_COST = {"caravan": 10.0, "merchantman": 20.0}  # Stock
+ROUTE_CAPACITY = {"barter": 1.0, "caravan": 3.0, "sea": 5.0}
+CAPACITY_VALUE = 4.0  # baskets of goods a route can carry per unit of capacity per turn
+CARRIAGE = {"barter": 0.15, "caravan": 0.10, "sea": 0.03}  # of the low price, per edge (sea: flat)
+BILLS_CAPACITY = 1.5
+TOLLS_CAPACITY, TOLLS_SHARE = 0.8, 0.10
+FREE_TRADE_CAPACITY = 1.3
+PACT_CAPACITY = 1.25
+MERCANTILE_TARIFF = 0.30  # on imported wares and luxuries
+MERCANTILE_BOUNTY = 0.10  # on exported wares and luxuries, paid by the Treasury
+EXPORT_SHARE = 0.5  # at most this share of a good's surplus leaves in a turn
+IMPORT_SHARE = 0.6  # at most this share of a market's demand is met by imports, across all routes
+EMBARGO_COST, EMBARGO_TURNS = 10.0, 10
+GIFT_COST, GIFT_RELATIONS = 10.0, 15.0
+
+# --- treaties (§16.1) --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TreatyType:
+    key: str
+    name: str
+    needs: str | None
+    sway: float
+    effect: str
+
+
+TREATIES: dict[str, TreatyType] = {
+    t.key: t
+    for t in (
+        TreatyType(
+            "non_aggression",
+            "Non-aggression",
+            "gifts",
+            5.0,
+            "Neither side may attack the other without breaking faith: "
+            "the breaker loses standing with every people.",
+        ),
+        TreatyType(
+            "trade_pact",
+            "Trade Pact",
+            "barter",
+            5.0,
+            "Routes between us carry 25% more, and no tariffs are levied between us.",
+        ),
+        TreatyType(
+            "alliance",
+            "Alliance",
+            "gifts",
+            10.0,
+            "If either is attacked, the other joins the war. Allies see what the other sees.",
+        ),
+    )
+}
+BREAK_FAITH_RELATIONS = 10.0  # every other people's relations with a treaty-breaker fall this much

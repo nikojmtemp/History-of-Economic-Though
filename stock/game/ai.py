@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from stock.game import actions, economy, military, research, rules
+from stock.game import actions, economy, military, research, rules, trade
 from stock.game.state import Nation, Unit, World
 
 
@@ -109,7 +109,7 @@ def _settle_target(world: World, n: Nation, u: Unit, radius: int = 3) -> str | N
 
 def _units(world: World, n: Nation, style: str) -> None:
     for u in list(world.units_of(n.id)):
-        if u.id not in world.units or u.military:
+        if u.id not in world.units or u.military or u.kind in ("caravan", "merchantman"):
             continue
         nd = world.nodes[u.node]
         # tame when standing on wild herds (khans and wanderers readily; others if pressed)
@@ -179,6 +179,15 @@ def _builds(world: World, n: Nation) -> None:
     if len(n.build_queue) >= 2:
         return
     r = float(n.last.get("r", rules.R0))
+    # the first market town and the first port are planned, not merely priced
+    for work in ("market", "port"):
+        if any(work in nd.works for nd in world.nodes_of(n.id)) or any(
+            q["work"] == work for q in n.build_queue
+        ):
+            continue
+        for nd in sorted(world.nodes_of(n.id), key=lambda x: -x.hands):
+            if _do(world, n, {"kind": "build", "node": nd.id, "work": work}):
+                return
     best: tuple[float, str, str] | None = None
     for nd in world.nodes_of(n.id):
         for work in rules.WORKS:
@@ -364,7 +373,7 @@ def _targets(world: World, n: Nation) -> list[str]:
 def _armies(world: World, n: Nation) -> None:
     targets = _targets(world, n)
     home = [nd.id for nd in world.nodes_of(n.id)]
-    for u in [x for x in world.units_of(n.id) if x.military]:
+    for u in [x for x in world.units_of(n.id) if x.military and x.kind != "fleet"]:
         for _ in range(3):
             if u.id not in world.units or u.moves_left <= 0:
                 break
@@ -473,7 +482,7 @@ def _diplomacy(world: World, n: Nation, style: str) -> None:
             motive
             and reserve
             and mine > eager * theirs
-            and n.relations.get(other_id, 0.0) < 10
+            and n.relations.get(other_id, 0.0) < (30.0 if style in ("khan", "lord") else 10.0)
             and (world.rng.random() < 0.5)
         ):
             if _do(world, n, {"kind": "declare_war", "nation": other_id}):
@@ -502,6 +511,137 @@ def _choose_revenue(world: World, n: Nation) -> None:
         _do(world, n, {"kind": "tax", "rate": rate})
 
 
+# --- trade, fleets and treaties (§11, §16) --------------------------------------------------------
+
+
+def _unit_step(world: World, n: Nation, u: Unit, goal: str) -> str | None:
+    """First step on the shortest path `u` itself may travel (ships by sea, traders by land)."""
+
+    prev: dict[str, str | None] = {u.node: None}
+    q = deque([u.node])
+    while q:
+        cur = q.popleft()
+        if cur == goal:
+            break
+        for e in world.adjacency()[cur]:
+            nxt = e.other(cur)
+            if nxt in prev:
+                continue
+            probe = Unit(u.id, u.nation, u.kind, cur, u.hands)
+            if actions.move_cost(world, probe, nxt) is None or actions.hostile_at(world, n, nxt):
+                continue
+            prev[nxt] = cur
+            q.append(nxt)
+    if goal not in prev:
+        return None
+    step = goal
+    while prev[step] is not None and prev[step] != u.node:
+        step = prev[step]  # type: ignore[assignment]
+    return step
+
+
+def _trade_targets(world: World, n: Nation, kind: str) -> list[str]:
+    out = []
+    for nd in world.nodes.values():
+        if nd.owner in (None, n.id) or nd.owner not in n.contacts:
+            continue
+        if military.at_war(world, n.id, nd.owner) or trade.embargoed(world, n.id, nd.owner):
+            continue
+        if n.relations.get(nd.owner, 0.0) < -20:
+            continue
+        if kind == "merchantman" and "port" not in nd.works:
+            continue
+        if (
+            kind == "merchantman"
+            and world.nations[nd.owner].option("commerce") == "mercantile"
+            and not world.treaty("trade_pact", n.id, nd.owner)
+        ):
+            continue
+        if any(r.a == n.id and r.b_node == nd.id for r in world.routes.values()):
+            continue
+        out.append(nd.id)
+    return out
+
+
+def _trade(world: World, n: Nation) -> None:
+    for u in [x for x in world.units_of(n.id) if x.kind in ("caravan", "merchantman")]:
+        if _do(world, n, {"kind": "open_route", "unit": u.id}):
+            continue
+        targets = _trade_targets(world, n, u.kind)
+        if not targets:
+            if u.age > 20:
+                del world.units[u.id]  # no one to trade with: the venture is written off
+            continue
+        goal = min(targets, key=lambda t: _distance(world, u.node, t))
+        for _ in range(3):
+            if u.id not in world.units or u.moves_left <= 0 or u.node == goal:
+                break
+            step = _unit_step(world, n, u, goal)
+            if step is None or not _do(world, n, {"kind": "move", "unit": u.id, "to": step}):
+                break
+        if u.id in world.units:
+            _do(world, n, {"kind": "open_route", "unit": u.id})
+    for nd in world.nodes_of(n.id):
+        for which in ("merchantman", "caravan"):
+            if n.stock < rules.TRADER_COST[which] + 15:
+                continue
+            if not _trade_targets(world, n, which):
+                continue
+            if _do(world, n, {"kind": "send_trader", "node": nd.id, "trader": which}):
+                return
+
+
+def _fleets(world: World, n: Nation, style: str) -> None:
+    enemies = _enemies(world, n)
+    fleets = [u for u in world.units_of(n.id) if u.kind == "fleet"]
+    enemy_ports = [nd.id for nd in world.nodes.values() if nd.owner in enemies and "port" in nd.works]
+    if enemy_ports and not fleets and style == "merchant" and n.treasury > 40:
+        for nd in world.nodes_of(n.id):
+            if _do(world, n, {"kind": "raise_unit", "node": nd.id, "unit_kind": "fleet"}):
+                break
+    for u in fleets:
+        if u.id not in world.units:
+            continue
+        goals = [
+            x.node for x in world.units.values() if x.kind == "fleet" and world.hostile(x, n.id)
+        ] + enemy_ports
+        if not goals:
+            continue
+        goal = min(goals, key=lambda t: _distance(world, u.node, t))
+        for _ in range(3):
+            if u.id not in world.units or u.moves_left <= 0 or u.node == goal:
+                break
+            step = _unit_step(world, n, u, goal) if not actions.hostile_at(world, n, goal) else None
+            if step is None and goal in world.neighbours(u.node, sea=True):
+                step = goal
+            if step is None or not _do(world, n, {"kind": "move", "unit": u.id, "to": step}):
+                break
+
+
+def _treaties(world: World, n: Nation, style: str) -> None:
+    if world.turn % 5 != 2:
+        return
+    mine = military.military_strength(world, n.id) + 1.0
+    for o in n.contacts:
+        other = world.nations[o]
+        if not other.alive or military.at_war(world, n.id, o):
+            continue
+        rel = n.relations.get(o, 0.0)
+        theirs = military.military_strength(world, o)
+        if theirs > 1.5 * mine and rel >= -10 and not world.treaty("non_aggression", n.id, o):
+            if _do(world, n, {"kind": "propose_treaty", "nation": o, "treaty": "non_aggression"}):
+                continue
+        if trade.route_between(world, n.id, o) and rel >= 10 and not world.treaty("trade_pact", n.id, o):
+            if _do(world, n, {"kind": "propose_treaty", "nation": o, "treaty": "trade_pact"}):
+                continue
+        shared = set(_enemies(world, n)) & set(trade._enemies(world, o))
+        if shared and rel >= 0 and not world.treaty("alliance", n.id, o):
+            if _do(world, n, {"kind": "propose_treaty", "nation": o, "treaty": "alliance"}):
+                continue
+        if style == "merchant" and rel < 20 and theirs > mine:
+            _do(world, n, {"kind": "gift", "nation": o})
+
+
 def take_turn(world: World, n: Nation) -> None:
     style = personality(n)
     for d in list(n.decisions):
@@ -513,6 +653,11 @@ def take_turn(world: World, n: Nation) -> None:
         if d.kind == "peace":
             _do(world, n, {"kind": "decide", "id": d.id, "choice": "accept"})
             continue
+        if d.kind == "treaty":
+            other = world.nations[d.data["from"]]
+            ok = trade.would_accept(world, other, n, d.data["treaty"])
+            _do(world, n, {"kind": "decide", "id": d.id, "choice": "accept" if ok else "refuse"})
+            continue
         order = d.data.get("order", "labour")
         choice = "grant" if n.orders[order].clout > 0.4 or n.sway < 15 else "refuse"
         _do(world, n, {"kind": "decide", "id": d.id, "choice": choice})
@@ -521,12 +666,15 @@ def take_turn(world: World, n: Nation) -> None:
     _raise(world, n)
     _armies(world, n)
     _raids(world, n, style)
+    _fleets(world, n, style)
+    _treaties(world, n, style)
     _units(world, n, style)
+    _trade(world, n)
     _builds(world, n)
     _expand(world, n)
-    for other in n.contacts:
-        if actions.check(world, n, {"kind": "barter", "nation": other}) is None:
-            _do(world, n, {"kind": "barter", "nation": other})
+    for partner in n.contacts:
+        if actions.check(world, n, {"kind": "barter", "nation": partner}) is None:
+            _do(world, n, {"kind": "barter", "nation": partner})
     _state(world, n, style)
     if world.turn % 3 == 0:
         _institutions(world, n, style)

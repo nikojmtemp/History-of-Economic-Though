@@ -70,6 +70,7 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 .decision button { margin: 4px 4px 0 0; }
 #end-turn { margin-top: 8px; padding: 10px; font-family: var(--serif); font-size: 15px; background: var(--ink);
   color: var(--paper); }
+#regent { margin-top: 4px; }
 #research-now { font-size: 12px; margin-bottom: 4px; cursor: pointer; }
 
 #selection { grid-area: sel; border-top: 1px solid var(--rule); padding: 8px 12px; min-height: 120px;
@@ -118,3 +119,9 @@ table.plain td.n { text-align: right; }
 .odds { font: bold 11px var(--sans); fill: var(--down); pointer-events: none; }
 .enemy-ring { fill: none; stroke: var(--down); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }
 .siege-ring { fill: none; stroke: var(--warn); stroke-width: 3; stroke-dasharray: 6 3; }
+.route { stroke-width: 2.5; stroke-dasharray: 6 4; opacity: .8; }
+.route-caravan { stroke: #b8862b; }
+.route-sea { stroke: #3b7a8c; }
+.route.mine { stroke-width: 3.5; opacity: 1; }
+.route.blocked { stroke: var(--down); stroke-dasharray: 2 4; }
+button.small { padding: 0 5px; font-size: 10px; }

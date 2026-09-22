@@ -443,10 +443,10 @@ Route slots are limited by Market Towns and Ports (§9.2). Bills of Exchange giv
 
 ### 11.2 What a route does each turn
 
-1. **Goods flow** from the cheaper market to the dearer one, one good at a time, up to capacity, until the price gap closes to carriage cost (10% per edge, or 3% by sea).
+1. **Goods flow** from the cheaper market to the dearer one, one good at a time, up to capacity, until the price gap closes to carriage cost (10% per edge, or 3% by sea). Flows are worked out from last turn's prices and surpluses. A market takes at most 60% of its demand from abroad, across all its routes.
 2. **Profit** (price gap × volume) goes to the route owner's Stock-holders. Customs go to the Treasury under the Commerce pillar (§13).
 3. **Extent** rises in both markets (§9.4).
-4. **Relations** rise by 1 per turn. **Research diffusion** strengthens (§12.3).
+4. **Relations** rise by 1 per turn, up to 50: trade makes friends, not allies. **Research diffusion** strengthens (§12.3).
 5. **Dependence** is recorded: what share of each partner's consumption this route supplies. Dependence feeds orbits (§17.2).
 
 ### 11.3 Breaking routes
@@ -726,7 +726,7 @@ Relations run from −100 to +100. They move with trade routes (+), shared enemi
 | Peace | — | Ends a war. Terms can include cession of nodes, tribute (N turns), reparations (Stock), or open markets. |
 | Non-aggression | 5 Sway | Breaking it gives the victim a casus belli and relations −50 |
 | Trade Pact | 5 Sway | Tariffs waived between the two. Route capacity +25%. |
-| Alliance | 10 Sway | Defensive. Allies share vision. |
+| Alliance | 10 Sway | Defensive: when one is attacked, the other joins the war. Allies share vision. Peoples ally only against a common enemy. |
 | Protection | — | One side pays tribute and the other defends it. Creates a **force lever** (§17.2). |
 | Loan | — | One side lends Stock at interest. Creates a **credit lever**. |
 
@@ -890,11 +890,15 @@ Every policy action (institution change, tax rate, budget level, trade policy, a
 - **Reports**: the three curves for every known nation, the produce and mode timeline, and the rankings.
 - **Commonplace Book**: the in-game encyclopedia. Every concept (Extent, the split, Security, Standing, Stupefaction, Incidence, Orbits) gets a short plain explanation, a diagram, and the Smith passage it models. It is optional reading that the game never requires. It is linked from tooltips by a ⓘ.
 
-### 19.7 Onboarding
+### 19.7 The regent
+
+A **Regent** button lets the same AI that runs the rivals rule the player's people for 10 turns, taking every decision. It is for skipping quiet stretches, and for seeing what the machine would do.
+
+### 19.8 Onboarding
 
 The first 10 turns show one contextual hint at a time. The hints can be turned off. They cover moving the band, the Hunt verb, depletion, Split, first contact, and Barter. After that, each newly unlocked verb, screen, or overlay pulses once. There is no tutorial campaign.
 
-### 19.8 Accessibility
+### 19.9 Accessibility
 
 Keep day and night themes, the colour-blind-safe nation inks, reduced motion, and keyboard control of every screen. Add hotkeys: End Turn (Enter), next unit (Tab), and one key per overlay and per screen.
 

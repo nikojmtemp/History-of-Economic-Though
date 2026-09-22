@@ -186,7 +186,8 @@ def test_a_full_game_stays_finite_and_conserves_value(seed: int) -> None:
             split = sum(L["split"].values())
             assert math.isclose(split, L["produce"], rel_tol=1e-9, abs_tol=1e-9)
             taxed = sum(n.orders[o].income for o in rules.ORDERS) + L["tax"]["collected"]
-            assert math.isclose(taxed, L["produce"], rel_tol=1e-6, abs_tol=1e-6)
+            # incomes and taxes = produce, plus transfers (tolls to lords, bounties from the Treasury)
+            assert math.isclose(taxed, L["produce"] + L["transfers"], rel_tol=1e-6, abs_tol=1e-6)
             assert 0.0 <= n.sway <= rules.SWAY_CAP
             for o in n.orders.values():
                 assert 0.0 <= o.contentment <= 100.0

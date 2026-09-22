@@ -150,6 +150,12 @@ function renderMap() {
       svg.push(`<path class="edge-sea" fill="none" d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}"/>`);
     } else svg.push(`<line class="edge-${e.kind}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
   }
+  for (const r of S.routes) {
+    const a = nodes[r.a_node], b = nodes[r.b_node];
+    if (!a || !b) continue;
+    const tip = `${routeName(r)}\n${flowText(r)}`;
+    svg.push(`<line class="route route-${r.kind} ${r.active ? "" : "blocked"} ${r.mine ? "mine" : ""}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" data-tip="${esc(tip)}"/>`);
+  }
   const selUnit = sel && sel.type === "unit" ? S.units.find((u) => u.id === sel.id) : null;
   const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack == null).map((m) => m.to) : []);
   const strike = Object.fromEntries(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack != null).map((m) => [m.to, m.attack]) : []);
@@ -264,6 +270,7 @@ function renderSelection() {
     if (!u) { sel = null; return renderSelection(); }
     const n = nodeById()[u.node];
     if (u.military) { box.innerHTML = armyCard(u, n); return; }
+    if (u.kind === "caravan" || u.kind === "merchantman") { box.innerHTML = traderCard(u, n); return; }
     let h = `<h2>${u.kind === "horde" ? "Horde" : "Band"} at ${esc(n.name)}</h2>`;
     h += `<div>${fmt(u.hands)} hands${u.herds ? ` · ${fmt(u.herds, 0)} head of herds` : ""} · moves ${u.moves_left}/${u.max_moves}${u.followed ? " · following the herds" : ""}</div>`;
     h += `<div class="verbs">`;
@@ -286,6 +293,11 @@ function renderSelection() {
     h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)}</span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
     if (n.siege) h += `<div class="warn">Besieged by ${esc(S.nations.find((x) => x.id === n.siege.by)?.name)}: falls in ${n.siege.turns} turns unless relieved.</div>`;
     h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button>`;
+    for (const [which, why] of Object.entries(n.send_trader || {})) {
+      if (why && /^(a caravan|a merchantman)/.test(why)) continue;
+      const name = which === "caravan" ? "Caravan" : "Merchantman";
+      h += `<button ${why ? "disabled" : ""} data-tip="${esc(`${S.unit_types[which].description}\nCosts ${S.trader_cost[which]} Stock.${why ? `\nNot now: ${why}` : ""}`)}" onclick="act({kind:'send_trader',node:'${n.id}',trader:'${which}'})">Send ${name}</button>`;
+    }
     for (const o of n.raise_options) {
       if (o.why && /needs the|needs [A-Z]/.test(o.why) && o.kind !== "warband") continue;
       h += `<button ${o.why ? "disabled" : ""} data-tip="${esc(raiseTip(o.kind, o.why))}" onclick="act({kind:'raise_unit',node:'${n.id}',unit_kind:'${o.kind}'})">Raise ${esc(o.name)}</button>`;
@@ -336,6 +348,56 @@ function armyCard(u, n) {
   return h;
 }
 
+// --- trade and diplomacy --------------------------------------------------------------------------
+
+const GOOD_GLYPH = { food: "food", wares: "wares", luxuries: "luxuries" };
+const nationName = (id) => S.nations.find((x) => x.id === id)?.name || "?";
+function routeName(r) {
+  const kind = { barter: "Barter", caravan: "Caravan route", sea: "Sea route" }[r.kind];
+  return r.mine ? `${kind} with ${nationName(r.partner)}${r.opened_by_us ? " (ours)" : ""}` : `${kind}: ${nationName(r.a)}–${nationName(r.b)}`;
+}
+function flowText(r) {
+  if (!r.active) return "Blockaded: nothing moves.";
+  const parts = Object.entries(r.flows).filter(([, q]) => Math.abs(q) > 0.005).map(([g, q]) => r.mine ? `${q > 0 ? "we sell" : "we buy"} ${fmt(Math.abs(q), 1)} ${GOOD_GLYPH[g]}` : `${fmt(Math.abs(q), 1)} ${g}`);
+  return (parts.join(", ") || "no trade this turn: prices too close") + `\ncapacity ${r.capacity} · carriage ${pct(r.carriage)}${r.opened_by_us ? ` · our merchants' profit ${fmt(r.profit, 1)}` : ""}`;
+}
+function traderCard(u, n) {
+  let h = `<h2>${esc(u.name)} at ${esc(n.name)}</h2><div>moves ${u.moves_left}/${u.max_moves}</div><div class="verbs">`;
+  h += `<button ${u.open_route ? "disabled" : ""} data-tip="${esc(u.open_route ? `Not here: ${u.open_route}` : `Open a ${u.kind === "caravan" ? "caravan" : "sea"} route with ${nationName(n.owner)} here.`)}" onclick="act({kind:'open_route',unit:'${u.id}'})">Open route here</button>`;
+  h += `</div><div class="small muted">${esc(u.description)} Move it by clicking a ringed node; merchants may enter foreign towns in peacetime.</div>`;
+  return h;
+}
+function diplomacyButtons(n) {
+  let h = "";
+  for (const k of n.treaties || []) h += `<span class="up small">${esc(S.treaty_types[k].name)}</span> <button class="small" data-tip="End the ${esc(S.treaty_types[k].name.toLowerCase())}: relations suffer." onclick="act({kind:'cancel_treaty',nation:'${n.id}',treaty:'${k}'}).then(renderScreen)">✕</button> `;
+  for (const [k, why] of Object.entries(n.propose || {})) {
+    if ((n.treaties || []).includes(k) || (why && /^needs [A-Z]/.test(why) && !why.includes("Sway"))) continue;
+    const t = S.treaty_types[k];
+    h += `<button ${why ? "disabled" : ""} data-tip="${esc(`${t.effect}\nCosts ${t.sway} Sway if they accept.${why ? `\nNot now: ${why}` : ""}`)}" onclick="act({kind:'propose_treaty',nation:'${n.id}',treaty:'${k}'}).then(renderScreen)">Propose ${esc(t.name)}</button> `;
+  }
+  h += `<button ${n.gift ? "disabled" : ""} data-tip="${esc(n.gift || "Send 10 Stock (or food) as a gift: their relations with us +15.")}" onclick="act({kind:'gift',nation:'${n.id}'}).then(renderScreen)">Gift</button> `;
+  h += n.embargoed ? '<span class="down small">embargo</span>' : `<button ${n.embargo ? "disabled" : ""} data-tip="${esc(n.embargo || "Embargo: close every route with them for 10 turns (10 Sway). They gain a just cause for war.")}" onclick="if(confirm('Embargo ${esc(n.name)}?'))act({kind:'embargo',nation:'${n.id}'}).then(renderScreen)">Embargo</button>`;
+  return h;
+}
+function screenTrade() {
+  const t = S.me.trade;
+  const goods = ["food", "wares", "luxuries"];
+  let h = `<h2>Trade</h2><p class="muted">Goods move from the market where they are cheaper to the one where they are dearer, up to each route's capacity, while the gap covers carriage. The gap is merchants' profit. Policy: <b>${esc(S.institutions.find((p) => p.key === "commerce").options.find((o) => o.active).name)}</b>. Route slots ${S.me.routes}/${S.me.route_slots}.</p>`;
+  h += `<table class="plain"><tr><th></th>${goods.map((g) => `<th>${g}</th>`).join("")}</tr>`;
+  h += `<tr><td>Imports</td>${goods.map((g) => `<td class="n">${fmt(t.imports[g], 1)}</td>`).join("")}</tr><tr><td>Exports</td>${goods.map((g) => `<td class="n">${fmt(t.exports[g], 1)}</td>`).join("")}</tr>`;
+  h += `<tr><td>Prices here</td>${goods.map((g) => `<td class="n">${fmt(S.me.prices[g], 2)}</td>`).join("")}</tr></table>`;
+  h += `<p>Merchants' profit ${fmt(t.profit, 1)} · tolls ${fmt(t.tolls, 1)} · tariffs ${fmt(t.tariff, 1)} · export bounties paid ${fmt(t.bounty, 1)}</p>`;
+  h += `<h3>Routes</h3><table class="plain"><tr><th>Route</th><th>Capacity</th><th>This turn</th><th>State</th></tr>`;
+  for (const r of S.routes.filter((x) => x.mine)) h += `<tr><td>${esc(routeName(r))}</td><td class="n">${r.capacity}</td><td class="small">${esc(flowText(r).split("\n")[0])}</td><td>${r.active ? '<span class="up">open</span>' : '<span class="down">blockaded</span>'}</td></tr>`;
+  if (!S.routes.some((x) => x.mine)) h += `<tr><td colspan="4" class="muted">No routes yet. Barter with a people your band meets; later send a caravan from a Market Town or a merchantman from a Port.</td></tr>`;
+  h += `</table><h3>Dependence</h3><p class="muted small">Share of our consumption bought from each people last turn, and the food we get from them. A people that relies on another for a quarter of any good, or a sixth of everything, falls into its orbit.</p><table class="plain"><tr><th>People</th><th>We depend on them</th><th>For food</th><th>They depend on us</th></tr>`;
+  for (const n of S.nations.filter((x) => x.met && x.id !== S.me.id)) {
+    const d = t.dependence[n.id] || 0, f = t.food_dependence[n.id] || 0;
+    h += `<tr><td style="color:${n.colour}">${esc(n.name)}</td><td class="n ${d >= 0.15 ? "warn" : ""}">${pct(d)}</td><td class="n ${f >= 0.25 ? "warn" : ""}">${pct(f)}</td><td class="n">${pct(n.depends_on_us)}</td></tr>`;
+  }
+  return h + `</table>`;
+}
+
 // --- the now column ---------------------------------------------------------------------------
 
 function renderNow() {
@@ -364,7 +426,7 @@ function openScreen(name) { screen = name; renderScreen(); }
 function closeScreen() { screen = null; $("screen").hidden = true; }
 function renderScreen() {
   if (!screen) return;
-  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, nations: screenNations, book: screenBook }[screen]();
+  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, book: screenBook }[screen]();
   $("screen-body").innerHTML = `<button class="close" onclick="closeScreen()">Close ✕</button>` + body;
   $("screen").hidden = false;
 }
@@ -449,6 +511,7 @@ function screenNations() {
       btn += `<button ${n.declare ? "disabled" : ""} data-tip="${esc(n.declare || `Declare war on ${n.name} (${cost}). Trade with them stops; their army strength is ${n.strength}.`)}" onclick="if(confirm('Declare war on ${esc(n.name)}?'))act({kind:'declare_war',nation:'${n.id}'}).then(renderScreen)">Declare war</button>`;
       if (n.truce) btn += ` <span class="muted small">truce to turn ${n.truce}</span>`;
     }
+    if (n.id !== S.me.id) btn += diplomacyButtons(n);
     h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${fmt(n.strength)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
   }
   h += `</table><h3>Your three curves</h3><p class="muted small">Produce per head · labour's share of produce · freedom. Not a score: a record.</p>`;
@@ -497,12 +560,19 @@ async function endTurn() {
   if (s) { update(s); showMoments(prev); }
 }
 $("end-turn").addEventListener("click", endTurn);
+$("regent").addEventListener("click", async () => {
+  if (!confirm("Let a regent rule for 10 turns? The AI will take every decision for us.")) return;
+  $("regent").disabled = true;
+  const s = await api("/regent", { turns: 10 });
+  $("regent").disabled = false;
+  if (s) update(s);
+});
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   if (e.key === "Enter" && !$("moment").hidden) { $("moment").hidden = true; return; }
   if (e.key === "Enter") endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
-  const k = { d: "discoveries", i: "institutions", t: "treasury", p: "nations", b: "book" }[e.key.toLowerCase()];
+  const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", b: "book" }[e.key.toLowerCase()];
   if (k) (screen === k ? closeScreen() : openScreen(k));
   if (e.key === "Tab") {
     e.preventDefault();

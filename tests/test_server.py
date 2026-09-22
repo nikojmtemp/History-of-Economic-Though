@@ -48,3 +48,10 @@ def test_forecast() -> None:
     c = client()
     f = c.post("/forecast", json={"kind": "institution", "pillar": "property", "option": "herds"}).json()
     assert not f["ok"] and "Taming" in f["why"]
+
+
+def test_a_regent_rules_for_a_while() -> None:
+    c = client()
+    s = c.post("/regent", json={"turns": 5}).json()
+    assert s["turn"] == 6 and not s["me"]["decisions"]
+    assert "routes" in s and "trade" in s["me"]

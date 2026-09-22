@@ -74,6 +74,7 @@ def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
         supplied=military.supplied(world, u),
         upgrade=military.upgrade_blocker(world, n, u) if u.kind == "regiment" else None,
         description=t.description,
+        open_route=trade.trader_blocker(world, n, u) if u.kind in ("caravan", "merchantman") else None,
     )
     verbs = {}
     for kind in ("split", "follow", "tame", "settle"):
@@ -145,6 +146,10 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
             buildable.append(entry)
         out["buildable"] = buildable
         out["found_band"] = actions.check(world, n, {"kind": "found_band", "node": nd.id})
+        out["send_trader"] = {
+            which: actions.check(world, n, {"kind": "send_trader", "node": nd.id, "trader": which})
+            for which in rules.TRADER_COST
+        }
         out["raise_options"] = [
             {
                 "kind": k,
@@ -296,9 +301,47 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
                 }
                 if o.id != n.id
                 else {},
+                treaties=[t["kind"] for t in world.treaties if {t["a"], t["b"]} == {n.id, o.id}],
+                propose={
+                    k: actions.check(world, n, {"kind": "propose_treaty", "nation": o.id, "treaty": k})
+                    for k in rules.TREATIES
+                }
+                if o.id != n.id
+                else {},
+                embargo=None
+                if o.id == n.id
+                else actions.check(world, n, {"kind": "embargo", "nation": o.id}),
+                embargoed=trade.embargoed(world, n.id, o.id) if o.id != n.id else False,
+                gift=None if o.id == n.id else actions.check(world, n, {"kind": "gift", "nation": o.id}),
+                depends_on_us=_r(o.last.get("dependence", {}).get(n.id, 0.0), 3) if o.id != n.id else 0.0,
             )
         nations.append(entry)
     edges = [{"a": e.a, "b": e.b, "kind": e.kind} for e in world.edges if e.a in explored and e.b in explored]
+    routes = []
+    for r in world.routes.values():
+        mine = n.id in (r.a, r.b)
+        seen = r.a_node in explored and r.b_node in explored
+        if not (mine or seen):
+            continue
+        sign = 1.0 if r.a == n.id else -1.0
+        routes.append(
+            {
+                "id": r.id,
+                "kind": r.kind,
+                "a": r.a,
+                "b": r.b,
+                "a_node": r.a_node,
+                "b_node": r.b_node,
+                "mine": mine,
+                "opened_by_us": r.a == n.id,
+                "active": r.active,
+                "partner": (r.b if r.a == n.id else r.a) if mine else None,
+                "capacity": _r(trade.capacity_of(world, r), 2),
+                "carriage": _r(trade.carriage_of(r), 3),
+                "flows": {g: _r(q * sign, 2) for g, q in r.flows.items()},  # + we export, - we import
+                "profit": _r(r.profit, 2),
+            }
+        )
     orders = {
         o: {
             "name": rules.ORDER_NAMES[o],
@@ -389,6 +432,17 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "war": military.summary(world, n),
             "defence": n.option("defence"),
             "war_cost": rules.WAR_COST,
+            "trade": {
+                "imports": {g: _r(q, 2) for g, q in n.trade.get("imports", {}).items()},
+                "exports": {g: _r(q, 2) for g, q in n.trade.get("exports", {}).items()},
+                "profit": _r(n.trade.get("profit", 0.0) + n.trade.get("barter", 0.0), 2),
+                "tolls": _r(n.trade.get("tolls", 0.0), 2),
+                "tariff": _r(n.trade.get("tariff", 0.0), 2),
+                "bounty": _r(n.trade.get("bounty", 0.0), 2),
+                "dependence": n.last.get("dependence", {}),
+                "food_dependence": n.last.get("food_dependence", {}),
+                "commerce": n.option("commerce"),
+            },
         },
         "nations": nations,
         "nodes": [_node(world, n, nid, vis) for nid in sorted(explored)],
@@ -422,6 +476,11 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             }
             for k, t in rules.UNITS.items()
         },
+        "routes": routes,
+        "treaty_types": {
+            k: {"name": t.name, "sway": t.sway, "effect": t.effect} for k, t in rules.TREATIES.items()
+        },
+        "trader_cost": rules.TRADER_COST,
         "log": log,
         "modes": [rules.MODE_NAMES[m] for m in rules.MODES],
     }

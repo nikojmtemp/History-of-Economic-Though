@@ -6,6 +6,7 @@ GET  /scenario         the world spec (seed:nodes:nations) that regenerates this
 POST /action           one action: {"kind": ..., ...}; answers {ok, why, state}
 POST /forecast         one action, previewed one turn ahead (§19.5)
 POST /turn             end the turn
+POST /regent           let the AI rule our people for {"turns": N} turns (it takes every decision)
 POST /new              a new world: {"spec": "random:SEED:NODES:NATIONS"} or {} for a fresh seed
 """
 
@@ -19,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from stock.game import actions, turn, view
+from stock.game import actions, ai, turn, view
 from stock.game.state import World
 from stock.game.worldgen import generate, parse_spec
 
@@ -76,6 +77,19 @@ def create_app(spec: str | None = None) -> FastAPI:
             if me.decisions:
                 raise HTTPException(409, "Answer the waiting decision first.")
             turn.end_turn(game.world)
+            return view.snapshot(game.world)
+
+    @app.post("/regent")
+    def regent(body: dict[str, Any]) -> dict[str, Any]:
+        """A regent rules for a while: the same AI as the rivals, playing our people."""
+
+        with game.lock:
+            me = game.world.nations[game.player_id()]
+            for _ in range(max(1, min(int(body.get("turns", 1)), 50))):
+                if game.world.winner is not None and not body.get("past_end"):
+                    break
+                ai.take_turn(game.world, me)
+                turn.end_turn(game.world)
             return view.snapshot(game.world)
 
     @app.post("/new")

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from stock.game import economy, military, politics, research, rules, trade
-from stock.game.state import Nation, Node, Unit, World
+from stock.game.state import Decision, Nation, Node, Unit, World
 
 Action = dict[str, Any]
 
@@ -42,8 +42,14 @@ def queued_on(n: Nation, node_id: str) -> int:
 
 
 def move_cost(world: World, u: Unit, to: str) -> int | None:
+    """Ships keep to sea lanes and the coast; everyone else keeps to land."""
+
     e = world.edge_between(u.node, to)
-    if e is None or e.kind == "sea":
+    if e is None:
+        return None
+    if trade.naval(u):
+        return 1 if trade.ship_edge_ok(world, u.node, to) else None
+    if e.kind == "sea":
         return None
     return e.cost()
 
@@ -77,7 +83,10 @@ def expected_return(world: World, n: Nation, nd: Node, work: str) -> float:
     _w, jobs, _per, value_per_job = row
     wage = float(n.last.get("wage", n.prices["food"]))
     surplus = jobs * (value_per_job - wage)
-    return surplus / max(work_cost(n, work), 1.0)
+    ret = surplus / max(work_cost(n, work), 1.0)
+    if work in ("market", "port"):
+        ret += rules.TRADE_TOWN_PREMIUM  # the trade a town draws: routes, a wider market
+    return ret
 
 
 def build_blocker(world: World, n: Nation, node_id: Any, work: str) -> str | None:
@@ -121,6 +130,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         return "this nation is gone"
     if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
         return _check_war(world, n, a)
+    if kind in ("send_trader", "open_route", "embargo", "gift", "propose_treaty", "cancel_treaty"):
+        return _check_trade(world, n, a)
     if kind in ("move", "split", "merge", "follow", "tame", "settle"):
         u = _unit(world, n, a)
         if u is None:
@@ -137,6 +148,11 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
                 return "no moves left this turn"
             if hostile_at(world, n, to):
                 return None if u.military else "enemies there: only soldiers can go"
+            if u.kind in ("caravan", "merchantman"):
+                owner = world.nodes[to].owner
+                if owner not in (None, n.id) and trade.embargoed(world, n.id, owner):
+                    return "under embargo"
+                return None  # merchants are welcome in peacetime
             if not can_enter(world, n, to):
                 return "settled by another people: at peace, you may not enter"
             return None
@@ -207,6 +223,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
             return "already trading"
         if military.at_war(world, n.id, other.id):
             return "at war"
+        if trade.embargoed(world, n.id, other.id):
+            return "under embargo"
         if not trade.in_reach(world, n, other):
             return "too far: bring a band next to them"
         if trade.route_count(world, n.id) >= trade.route_slots(world, n):
@@ -341,6 +359,8 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
     kind = a["kind"]
     if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
         return _act_war(world, n, a)
+    if kind in ("send_trader", "open_route", "embargo", "gift", "propose_treaty", "cancel_treaty"):
+        return _act_trade(world, n, a)
     if kind == "move":
         u = _unit(world, n, a)
         assert u is not None
@@ -494,6 +514,16 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
             n.decisions.remove(d)
             military.resolve_capture(world, n, d.data["node"], str(a["choice"]), d.data.get("from"))
             return None
+        if d.kind == "treaty":
+            n.decisions.remove(d)
+            other = world.nations[d.data["from"]]
+            if a.get("choice") == "accept" and trade.treaty_blocker(world, other, n, d.data["treaty"]) in (
+                None,
+                f"needs {rules.TREATIES[d.data['treaty']].sway:.0f} Sway",
+            ):
+                other.sway = max(0.0, other.sway - rules.TREATIES[d.data["treaty"]].sway)
+                trade.sign(world, other, n, d.data["treaty"])
+            return None
         if d.kind == "peace":
             n.decisions.remove(d)
             if a.get("choice") == "accept":
@@ -593,3 +623,123 @@ def process_build_queue(world: World, n: Nation) -> None:
                 quote=rules.MOMENT_QUOTES["first_manufactory"],
             )
     n.build_queue = keep
+
+
+# --- trade and diplomacy (§11, §16) ---------------------------------------------------------------
+
+
+def traders_out(world: World, n: Nation) -> int:
+    return sum(1 for u in world.units_of(n.id) if u.kind in ("caravan", "merchantman"))
+
+
+def _check_trade(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "send_trader":
+        nd = _own_node(world, n, a.get("node"))
+        which = str(a.get("trader", ""))
+        if nd is None:
+            return "not your settled node"
+        if which not in rules.TRADER_COST:
+            return "caravan or merchantman"
+        need = "market" if which == "caravan" else "port"
+        if need not in nd.works:
+            return (
+                "a caravan sets out from a Market Town"
+                if which == "caravan"
+                else "a merchantman sails from a Port"
+            )
+        if n.stock < rules.TRADER_COST[which]:
+            return f"needs {rules.TRADER_COST[which]:.0f} Stock"
+        if trade.route_count(world, n.id) + traders_out(world, n) >= trade.route_slots(world, n):
+            return "no free route slot"
+        return None
+    if kind == "open_route":
+        u = _unit(world, n, a)
+        if u is None:
+            return "no such trader"
+        return trade.trader_blocker(world, n, u)
+    other = world.nations.get(str(a.get("nation", "")))
+    if other is None or other.id == n.id or not other.alive:
+        return "no such people"
+    if other.id not in n.contacts:
+        return "not in contact"
+    if kind == "embargo":
+        if n.embargo.get(other.id, 0) >= world.turn:
+            return "already under our embargo"
+        if n.seat in ("council", "interregnum"):
+            return "needs a chiefdom or state"
+        return None if n.sway >= rules.EMBARGO_COST else f"needs {rules.EMBARGO_COST:.0f} Sway"
+    if kind == "gift":
+        if military.at_war(world, n.id, other.id):
+            return "at war"
+        if n.stock < rules.GIFT_COST and n.store["food"] < rules.GIFT_COST:
+            return f"needs {rules.GIFT_COST:.0f} Stock or food"
+        if n.counters.get(f"gift_{other.id}", -99) >= world.turn - 2:
+            return "we gave lately"
+        return None
+    treaty = str(a.get("treaty", ""))
+    if kind == "cancel_treaty":
+        return None if world.treaty(treaty, n.id, other.id) else "no such treaty"
+    why = trade.treaty_blocker(world, n, other, treaty)
+    if why:
+        return why
+    if any(d.kind == "treaty" and d.data.get("from") == n.id for d in other.decisions):
+        return "a proposal is already waiting"
+    return None
+
+
+def _act_trade(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "send_trader":
+        nd = world.nodes[str(a["node"])]
+        which = str(a["trader"])
+        n.stock -= rules.TRADER_COST[which]
+        uid = world.new_id("u")
+        world.units[uid] = Unit(uid, n.id, which, nd.id, 0.0, moves_left=0, home=nd.id)
+        world.emit(n.id, "trader", f"A {rules.UNITS[which].name.lower()} sets out from {nd.name}.", nd.id)
+    elif kind == "open_route":
+        u = _unit(world, n, a)
+        assert u is not None
+        trade.open_route(world, n, u)
+    elif kind == "embargo":
+        other = world.nations[str(a["nation"])]
+        n.sway -= rules.EMBARGO_COST
+        trade.embargo(world, n, other)
+    elif kind == "gift":
+        other = world.nations[str(a["nation"])]
+        n.counters[f"gift_{other.id}"] = float(world.turn)
+        trade.gift(world, n, other)
+    elif kind == "cancel_treaty":
+        t = world.treaty(str(a["treaty"]), n.id, str(a["nation"]))
+        assert t is not None
+        world.treaties.remove(t)
+        other = world.nations[str(a["nation"])]
+        other.relations[n.id] = other.relations.get(n.id, 0.0) - 10.0
+        for x, y in ((n, other), (other, n)):
+            world.emit(
+                x.id, "treaty", f"The {rules.TREATIES[t['kind']].name.lower()} with {y.name} is ended."
+            )
+    elif kind == "propose_treaty":
+        other = world.nations[str(a["nation"])]
+        treaty = str(a["treaty"])
+        name = rules.TREATIES[treaty].name
+        if other.player:
+            other.decisions.append(
+                Decision(
+                    id=world.new_id("d"),
+                    kind="treaty",
+                    title=f"{n.name} propose a {name.lower()}",
+                    text=f"{n.name} propose a {name.lower()}. {rules.TREATIES[treaty].effect}",
+                    choices=[
+                        {"key": "accept", "label": "Accept", "effect": "Signed at no cost to us."},
+                        {"key": "refuse", "label": "Refuse", "effect": "Nothing changes."},
+                    ],
+                    data={"from": n.id, "treaty": treaty},
+                )
+            )
+            return None
+        if not trade.would_accept(world, n, other, treaty):
+            return "refused"
+        n.sway -= rules.TREATIES[treaty].sway
+        trade.sign(world, n, other, treaty)
+    return None
