@@ -337,6 +337,8 @@ So if you build what the market wants, it's cheap. If you force a manufactory wh
 
 Pre-state, there is no Treasury, so there are no bounties. A chiefdom can only invest in what pays, plus herds.
 
+**Demolish.** A work can be pulled down to free its slot; nothing is refunded. This is how a manufactory replaces the workshops of a town that has no room left.
+
 ### 9.7 Security
 
 ```
@@ -803,7 +805,7 @@ It ends with the option to **Keep playing**.
 
 ## 18. Events and decisions
 
-Events are the other way society talks to you, besides Demands. Each is a card with 2–3 choices and the forecast effect of each. Target: about one event every 3 turns.
+Events are the other way society talks to you, besides Demands. Each is a card with 2–3 choices and the effect of each. At most one new card a turn, from turn 15. Plague is rare (0.6% a turn, doubled at most by trade) but takes 10–25% of the people. Before Civil Government a failed harvest simply costs food: there is no Treasury to answer it.
 
 | Event | Trigger | Choices |
 |---|---|---|
@@ -816,7 +818,7 @@ Events are the other way society talks to you, besides Demands. Each is a card w
 | **Mutiny** | Regiments unpaid 2 turns | **Pay arrears** (Treasury ×2) · **Disband** · **Promise** (Sway −10, gain 1 turn) |
 | **Bank crash** | Bank and Stock growth > 15%/turn for 3 turns | Stock −20%. Credit frozen 3 turns. Choose a bailout (Treasury) or let it fail (Stock-holders' contentment −20). |
 | **Wild herds migrate** | Random, grassland | A new node gets wild herds and an old one loses them |
-| **Colonists petition** | Navigation + Labour unrest > 50 | **Charter a colony** (free Colonists unit) · **Refuse** |
+| **Colonists petition** | Navigation, a Port, Labour contentment < 40 | **Charter a colony** (a free band of 2 hands at the port; with Navigation, a band at its own port can take ship along sea lanes) · **Refuse** |
 
 ---
 
@@ -896,7 +898,7 @@ A **Regent** button lets the same AI that runs the rivals rule the player's peop
 
 ### 19.8 Onboarding
 
-The first 10 turns show one contextual hint at a time. The hints can be turned off. They cover moving the band, the Hunt verb, depletion, Split, first contact, and Barter. After that, each newly unlocked verb, screen, or overlay pulses once. There is no tutorial campaign.
+Early turns show one contextual hint at a time, read from the board: choosing a discovery, moving on when the game thins, following and taming herds, settling, investing Stock, bartering with a new people, founding a government, choosing a revenue. The hints can be turned off. There is no tutorial campaign.
 
 ### 19.9 Accessibility
 

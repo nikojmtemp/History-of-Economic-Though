@@ -238,3 +238,18 @@ def test_someone_farms_by_turn_60() -> None:
 def test_manufactories_appear() -> None:
     hits = [any("manufactory" in nd.works for nd in finished(s).nodes.values()) for s in SEEDS]
     assert sum(hits) >= 3, hits
+
+
+def test_demolishing_frees_a_slot() -> None:
+    w = generate(seed=5)
+    me, uid = _me(w)
+    n = w.nations[me]
+    n.known.append("tillage")
+    node = w.nodes[w.units[uid].node]
+    if node.t.arable <= 0:
+        pytest.skip("start node has no arable ground on this seed")
+    actions.act(w, me, {"kind": "settle", "unit": uid})
+    before = list(node.works)
+    assert actions.act(w, me, {"kind": "demolish", "node": node.id, "work": "fields"}) is None
+    assert len(node.works) == len(before) - 1
+    assert actions.check(w, n, {"kind": "demolish", "node": node.id, "work": "bank"}) == "no such work there"

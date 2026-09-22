@@ -189,7 +189,8 @@ def _work_jobs(
             per = {"service": rules.MARKET_SERVICE_PER_EXTENT * extent}
         else:
             per = dict(work.makes)
-        per = {g: q * prod for g, q in per.items()}
+        boost = rules.PATENT_BOOST if n.counters.get(f"patent:{nd.id}", 0.0) >= world.turn else 1.0
+        per = {g: q * prod * boost for g, q in per.items()}
         value = sum(q * (n.prices[g] if g in n.prices else 1.0) for g, q in per.items())
         if w == "pasture":
             value += rules.HERD_GROWTH * rules.HERDS_PER_HERDSMAN * rules.HERD_VALUE
@@ -353,6 +354,16 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
     barter_gain = float(tr.get("barter", 0.0))
     sources["commerce"] += merchant_profit + barter_gain
     produce = sum(sources.values())
+    by_node: dict[str, float] = {}
+    for j in plan.jobs:
+        v = (
+            j.food * p["food"]
+            + j.wares * p["wares"]
+            + j.luxuries * p["luxuries"]
+            + j.herd_growth * rules.HERD_VALUE
+            + j.service
+        )
+        by_node[j.node] = by_node.get(j.node, 0.0) + v
 
     # the split: wages first, profit next, rent last (§10.1)
     labour_opt = n.option("labour")
@@ -442,6 +453,8 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
                 nominal[o] = actual[o] = assessed * 0.9 * share
         elif rev == "customs":
             base = float(tr.get("value", 0.0))
+            if n.counters.get("smuggling_until", 0.0) >= world.turn:
+                base *= 0.5  # half the goods come in by night
             levy = rate * base * eff
             nominal["stock"] = levy
             actual["stock"] = levy * 0.5
@@ -699,6 +712,7 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
         "filled_jobs": plan.filled_jobs,
         "lux_share": lux_share,
         "transfers": transfers,
+        "node_produce": {k: round(v, 2) for k, v in by_node.items()},
         "trade": {k: v for k, v in tr.items()},
         "supply": supply,
     }

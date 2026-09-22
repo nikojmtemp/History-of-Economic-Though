@@ -128,3 +128,7 @@ button.small { padding: 0 5px; font-size: 10px; }
 .charts { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; }
 .charts figure { margin: 0; }
 .charts svg { background: var(--paper-2); border: 1px solid var(--rule); }
+#hint { border: 1px solid var(--accent); background: var(--paper-2); padding: 6px 8px; margin-bottom: 8px;
+  border-radius: var(--radius); font-size: 12px; display: flex; gap: 6px; align-items: flex-start; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

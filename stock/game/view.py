@@ -168,6 +168,7 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
         ]
         jobs = sum(rules.WORKS[w].jobs for w in nd.works)
         out["jobs"] = jobs
+        out["produce"] = _r(n.last.get("node_produce", {}).get(nd.id, 0.0), 1)
     return out
 
 

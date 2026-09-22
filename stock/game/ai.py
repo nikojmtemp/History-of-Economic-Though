@@ -198,6 +198,8 @@ def _builds(world: World, n: Nation) -> None:
             ret = actions.expected_return(world, n, nd, work)
             if ret >= r and (best is None or ret > best[0]):
                 best = (ret, nd.id, work)
+    if best is None:
+        best = _rebuild(world, n, r)
     if best is not None:
         _do(world, n, {"kind": "build", "node": best[1], "work": best[2]})
     # walls on the frontier, then roads when the Treasury is flush
@@ -215,6 +217,38 @@ def _builds(world: World, n: Nation) -> None:
             for x in world.neighbours(nd.id):
                 if _do(world, n, {"kind": "road", "a": nd.id, "b": x}):
                     return
+
+
+def _rebuild(world: World, n: Nation, r: float) -> tuple[float, str, str] | None:
+    """Every slot is taken: pull down the poorest work where a manufactory would pay far better."""
+
+    if (
+        n.option("labour") not in rules.FREE_LABOUR
+        or not n.knows("division")
+        or n.stock < actions.work_cost(n, "manufactory")
+    ):
+        return None
+    best: tuple[float, str, str] | None = None
+    for nd in world.nodes_of(n.id):
+        if actions.build_blocker(world, n, nd.id, "manufactory") is None or not nd.works:
+            continue
+        ret = actions.expected_return(world, n, nd, "manufactory")
+        if ret >= 2 * r and (best is None or ret > best[0]):
+            best = (ret, nd.id, "manufactory")
+    if best is None:
+        return None
+    nd = world.nodes[best[1]]
+    rows = {w: v for w, _jobs, _per, v in economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0)))}
+    poorest = min(
+        (w for w in nd.works if w not in ("market", "port", "fort", "academy", "manufactory")),
+        key=lambda w: rows.get(w, 0.0),
+        default=None,
+    )
+    if poorest is None or not _do(world, n, {"kind": "demolish", "node": nd.id, "work": poorest}):
+        return None
+    if actions.build_blocker(world, n, nd.id, "manufactory") is not None:
+        return None
+    return best
 
 
 def _expand(world: World, n: Nation) -> None:
@@ -241,7 +275,7 @@ def _institutions(world: World, n: Nation, style: str) -> None:
         "labour": {
             "serfdom": 1.5 if style == "lord" else 0.3,
             "guilds": 1.0,
-            "free": 2.5 if style == "merchant" or (n.knows("division") and style != "khan") else 0.8,
+            "free": 2.5 if style == "merchant" or n.knows("division") else 0.8,
             "poor_laws": 0.6,
         },
         "commerce": {
@@ -711,6 +745,9 @@ def _balance(world: World, n: Nation) -> None:
 def take_turn(world: World, n: Nation) -> None:
     style = personality(n)
     for d in list(n.decisions):
+        if d.kind == "event":
+            _do(world, n, {"kind": "decide", "id": d.id, "choice": d.data["ai"]})
+            continue
         if d.kind == "capture":
             _do(
                 world, n, {"kind": "decide", "id": d.id, "choice": "plunder" if style == "khan" else "occupy"}

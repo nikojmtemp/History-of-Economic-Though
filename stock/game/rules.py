@@ -1203,6 +1203,7 @@ EXILE_MAX_TURNS = 10
 
 # --- trade (§11) --------------------------------------------------------------------------------
 
+PATENT_BOOST = 1.3  # output of works using a patented method (§18)
 TRADE_TOWN_PREMIUM = 0.08  # return merchants expect from a town's trade, beyond its own output
 TRADER_COST = {"caravan": 10.0, "merchantman": 20.0}  # Stock
 ROUTE_CAPACITY = {"barter": 1.0, "caravan": 3.0, "sea": 5.0}

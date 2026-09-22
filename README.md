@@ -37,6 +37,10 @@ Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:N
 | `stock/game/turn.py` | The end-of-turn order (§21.1) and forecasts (§19.5) |
 | `stock/game/view.py`, `stock/server.py`, `stock/web/` | Snapshot, HTTP API, browser UI |
 
+## Balance (tools.sweep, 30 AI-only games)
+
+First people leaves Hunting at turn 14 (median); all peoples out of Hunting by turn 45 in 97% of games; someone farming by turn 60 in 97%; a manufactory by turn 110 in 87% (target 90%); at least 6 wars in 87%; hegemony in 40% (target 30–60%); Commerce reached in every game, first at median turn 85.
+
 ## Milestones (§22.3)
 
 | | Status |
@@ -47,4 +51,4 @@ Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:N
 | M4 War | Done: warbands, riders, feudal host, militia, regiments, musketeers; movement, supply and cohesion, battles with odds, sieges and forts, capture (occupy, plunder, raze), raids and casus belli, war, peace, tribute and truce, rebels, war weariness, Security from real defence. Deferred: fleets and blockades (M5, with sea routes), zones of control, debt-funded wars (needs Public Credit) |
 | M5 Trade and diplomacy | Done: goods flows on barter, caravan and sea routes (merchants' profit, carriage, shared import cap), caravans and merchantmen that walk or sail to a foreign town to open a route, Staples & Tolls, Mercantile tariffs, bounties and Navigation Act, Free Trade, blockades by armies and fleets, fleets and naval battle, embargo, gifts, non-aggression, trade pacts, alliances that join defensive wars, broken faith, dependence by partner and for food, the Trade screen, and the Regent |
 | M6 Hegemony and AI | Done: public credit (borrow at home or abroad, interest, repay, default, forced default), trade, credit and force levers, orbits and spheres, Ascendancy with a public countdown, the coalition against a leader, Protection treaties, an AI that borrows, lends, protects the weak when ambitious and combines against a leader; Reports screen with everyone's curves and levers, Orbits overlay, end screen. AI games: hegemony 30%, wars median 12, manufactories by turn 110 in 73% (target 90%) |
-| M7 Polish | Next. UI shell, moments, Commonplace Book, Reports and end screen done. Missing: onboarding hints, the other §18 events, more overlays (produce, supply, security), accessibility pass |
+| M7 Polish | Done: the §18 events (harvest failure, plague, the ingenious workman, enclosure, smugglers, bank crash, wild herds wandering, colonists who can take ship), onboarding hints, Produce and Supply overlays, Demolish, day/night toggle, hotkey help, a fuller Commonplace Book, pop-ups for plague, coalitions and Ascendancy |

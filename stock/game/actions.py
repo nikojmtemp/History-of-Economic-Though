@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stock.game import economy, finance, military, politics, research, rules, trade
+from stock.game import economy, events, finance, military, politics, research, rules, trade
 from stock.game.state import Decision, Nation, Node, Unit, World
 
 Action = dict[str, Any]
@@ -50,6 +50,11 @@ def move_cost(world: World, u: Unit, to: str) -> int | None:
     if trade.naval(u):
         return 1 if trade.ship_edge_ok(world, u.node, to) else None
     if e.kind == "sea":
+        # colonists: a band at its own port may take ship, once the people knows Navigation
+        here = world.nodes[u.node]
+        n = world.nations[u.nation]
+        if u.kind == "band" and here.owner == u.nation and "port" in here.works and n.knows("navigation"):
+            return 1
         return None
     return e.cost()
 
@@ -250,6 +255,13 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         return None
     if kind == "build":
         return build_blocker(world, n, a.get("node"), str(a.get("work", "")))
+    if kind == "demolish":
+        site = _own_node(world, n, a.get("node"))
+        if site is None:
+            return "not your settled node"
+        if str(a.get("work", "")) not in site.works:
+            return "no such work there"
+        return None
     if kind == "unqueue":
         i = a.get("index")
         if not isinstance(i, int) or not 0 <= i < len(n.build_queue):
@@ -475,6 +487,13 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
             )
         else:
             n.build_queue.append({"node": str(a["node"]), "work": work, "status": "waiting"})
+    elif kind == "demolish":
+        nd = world.nodes[str(a["node"])]
+        work = str(a["work"])
+        nd.works.remove(work)
+        if work == "pasture" and "pasture" not in nd.works:
+            nd.herds *= 0.5  # half the herd goes to market
+        world.emit(n.id, "demolished", f"{rules.WORKS[work].name} at {nd.name} is pulled down.", nd.id)
     elif kind == "unqueue":
         n.build_queue.pop(int(a["index"]))
     elif kind == "road":
@@ -512,6 +531,12 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
         n.budget[str(a["line"])] = int(a["level"])
     elif kind == "decide":
         d = next(x for x in n.decisions if x.id == a["id"])
+        if d.kind == "event":
+            if a.get("choice") not in {c["key"] for c in d.choices}:
+                return "no such choice"
+            n.decisions.remove(d)
+            events.resolve(world, n, d, str(a["choice"]))
+            return None
         if d.kind == "capture":
             if a.get("choice") not in {c["key"] for c in d.choices}:
                 return "no such choice"

@@ -161,6 +161,7 @@ function renderMap() {
   }
   const selUnit = sel && sel.type === "unit" ? S.units.find((u) => u.id === sel.id) : null;
   const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack == null).map((m) => m.to) : []);
+  const supplied = overlay === "supply" ? supplyReach() : new Set();
   const strike = Object.fromEntries(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack != null).map((m) => [m.to, m.attack]) : []);
   for (const n of S.nodes) {
     const r = radius(n);
@@ -168,6 +169,13 @@ function renderMap() {
     let stroke = "var(--rule)", sw = 1;
     if (overlay === "political" && n.owner) { stroke = nations[n.owner]?.colour || "var(--ink)"; sw = 4; }
     if (overlay === "unrest" && n.visible && n.owner) fill = n.unrest > 70 ? "#c0503e" : n.unrest > 40 ? "#e0b04e" : "#94b87e";
+    if (overlay === "produce" && n.visible && n.owner) {
+      const v = n.produce != null ? n.produce : n.hands;  // our towns by produce; others by people
+      const max = Math.max(...S.nodes.map((x) => (x.produce != null ? x.produce : x.hands || 0)), 1);
+      const t = Math.min(1, v / max);
+      fill = `rgb(${Math.round(240 - 150 * t)}, ${Math.round(220 - 60 * t)}, ${Math.round(150 - 90 * t)})`;
+    }
+    if (overlay === "supply") fill = supplied.has(n.id) ? "#94b87e" : n.visible ? "#c0503e" : fill;
     if (overlay === "orbits" && n.visible && n.owner) {
       const centre = nations[n.owner]?.orbit_of;
       fill = centre ? nations[centre]?.colour || fill : nations[n.owner]?.colour || fill;
@@ -298,7 +306,7 @@ function renderSelection() {
   let h = `<h2>${esc(n.name)} <span class="muted small">${n.terrain_name}${n.river ? " · river" : ""}${n.coast ? " · coast" : ""}</span></h2>`;
   h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
   if (n.owner === S.me.id) {
-    h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)}</span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
+    h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)} <button class="small" data-tip="Pull it down to free the slot. Nothing is refunded." onclick="if(confirm('Pull down this ${esc(S.works.find((x) => x.key === w)?.name || w)}?'))act({kind:'demolish',node:'${n.id}',work:'${w}'})">✕</button></span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
     if (n.siege) h += `<div class="warn">Besieged by ${esc(S.nations.find((x) => x.id === n.siege.by)?.name)}: falls in ${n.siege.turns} turns unless relieved.</div>`;
     h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button>`;
     for (const [which, why] of Object.entries(n.send_trader || {})) {
@@ -454,7 +462,51 @@ function screenReports() {
 
 // --- the now column ---------------------------------------------------------------------------
 
+// --- hints for a first game: one at a time, from what is on the board -----------------------------
+
+let hintsOff = false;
+try { hintsOff = localStorage.getItem("stock-hints") === "off"; } catch (e) { /* storage may be blocked */ }
+function currentHint() {
+  const me = S.me, mine = S.units.filter((u) => u.nation === me.id);
+  const band = mine.find((u) => !u.military && u.kind === "band");
+  const node = band ? S.nodes.find((n) => n.id === band.node) : null;
+  const known = (k) => S.discoveries.find((d) => d.key === k)?.state === "known";
+  const settled = S.nodes.some((n) => n.owner === me.id);
+  if (S.turn > 60) return null;
+  if (!me.researching) return "Choose a discovery: click the line under this box, or press D. Taming and Tillage open the way out of the hunt.";
+  if (band && node && node.game != null && node.game < 0.45 && !settled) return `The game at ${node.name} is thinning (${pct(node.game)} left). Select your band and click a ringed neighbour to move on.`;
+  if (band && node && node.features.includes("wild_herds") && !known("taming") && !band.followed) return "Wild herds graze here. Select your band and choose Follow the herds: three turns of it halves the cost of Taming.";
+  if (band && node && node.features.includes("wild_herds") && known("taming")) return "You know Taming, and wild herds are here: select your band and choose Tame to become a horde.";
+  if (band && known("tillage") && !settled) return "You know Tillage. Take a band to a river valley or coast and choose Settle: fields grow far more than the hunt.";
+  if (settled && me.build_queue.length === 0 && me.stock >= 8) return "You have Stock to invest. Click your settlement and queue a work: green returns beat the rate of profit and are built by private stock.";
+  if (S.nations.some((n) => n.met && n.id !== me.id) && known("barter") && me.routes === 0) return "You have met another people. Open Peoples (P) and choose Barter: both markets widen and knowledge flows.";
+  if (me.seat === "chiefdom" && known("magistracy")) return "You know Magistracy. Found a government (left panel) to raise taxes and build a Treasury.";
+  if (me.seat === "civil" && S.institutions.find((p) => p.key === "revenue").options.find((o) => o.active).key === "plunder") return "Your government has no taxes yet. Open Institutions (I) and choose a Revenue option to fill the Treasury.";
+  return null;
+}
+function renderHint() {
+  const h = hintsOff ? null : currentHint();
+  const box = $("hint");
+  box.hidden = !h;
+  if (h) box.innerHTML = `<span>${esc(h)}</span> <button class="small" title="No more hints" onclick="hintsOff=true;try{localStorage.setItem('stock-hints','off')}catch(e){};renderHint()">✕</button>`;
+}
+
+// armies are supplied within two steps of our towns, and riders on open grazing
+function supplyReach() {
+  const adj = {};
+  for (const e of S.edges) if (e.kind !== "sea") { (adj[e.a] ||= []).push(e.b); (adj[e.b] ||= []).push(e.a); }
+  const out = new Set();
+  let frontier = S.nodes.filter((n) => n.owner === S.me.id).map((n) => n.id);
+  frontier.forEach((x) => out.add(x));
+  for (let i = 0; i < 2; i++) {
+    frontier = frontier.flatMap((x) => adj[x] || []).filter((x) => !out.has(x));
+    frontier.forEach((x) => out.add(x));
+  }
+  return out;
+}
+
 function renderNow() {
+  renderHint();
   const me = S.me;
   $("decisions").innerHTML = me.decisions.map((d) => `<div class="decision"><b class="serif">${esc(d.title)}</b><div class="small">${esc(d.text)}</div>${d.choices.map((c) => `<button data-tip="${esc(c.effect)}" onclick="act({kind:'decide',id:'${d.id}',choice:'${c.key}'})">${esc(c.label)}</button>`).join("")}</div>`).join("");
   const cur = me.researching ? S.discoveries.find((d) => d.key === me.researching) : null;
@@ -476,7 +528,7 @@ function showEnd() {
   $("moment").hidden = false;
 }
 function showMoments(prevTurn) {
-  const fresh = S.log.filter((e) => e.turn === prevTurn && ["moment", "mode", "regression", "victory"].includes(e.kind));
+  const fresh = S.log.filter((e) => e.turn === prevTurn && ["moment", "mode", "regression", "victory", "plague", "coalition", "hegemony"].includes(e.kind));
   if (!fresh.length) return;
   const e = fresh[0];
   $("moment").innerHTML = `<div class="card"><h2>${e.kind === "regression" ? "A regression" : e.kind === "victory" ? "The end of the game" : "A moment"}</h2><p class="serif">${esc(e.text)}</p>${e.quote ? `<q>“${esc(e.quote)}”<br><span class="small">— Adam Smith, The Wealth of Nations</span></q>` : ""}<button class="primary" onclick="$('moment').hidden=true">Continue</button></div>`;
@@ -593,6 +645,14 @@ function screenBook() {
     ["Who really pays", "The nominal payer of a tax and the one who ends up poorer are often different. The Treasury screen shows both."],
     ["Hegemony and opulence", "A people with 40% of the world's produce and half the others in its orbit for ten turns wins by hegemony. Otherwise, at the last turn, the people with the most produce per head wins by opulence."],
   ];
+  entries.push(
+    ["War", "Soldiers are hands taken from work: an army is paid for in produce as well as in Treasury. Each kind of army suits a kind of society; shepherds' riders rule the open grass, walls and hills blunt them, and a standing army with firearms beats everything. Armies more than two steps from our towns, or crowded, lose cohesion."],
+    ["Trade", "Goods move from where they are cheap to where they are dear while the gap pays for carriage. The gap is the merchants' profit, and it goes to whoever opened the route. Every route widens both markets; a people that buys much of what it eats from one partner depends on it."],
+    ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
+    ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
+    ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
+    ["Keys", "Enter ends the turn. Tab selects your next unit. D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+  );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
 
@@ -623,6 +683,18 @@ async function endTurn() {
   if (s) { update(s); showMoments(prev); showEnd(); }
 }
 $("end-turn").addEventListener("click", endTurn);
+function applyTheme(t) {
+  if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+}
+try { applyTheme(localStorage.getItem("stock-theme")); } catch (e) { /* storage may be blocked */ }
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme === "dark" ||
+    (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  const t = dark ? "light" : "dark";
+  applyTheme(t);
+  try { localStorage.setItem("stock-theme", t); } catch (e) { /* ignore */ }
+});
+$("help").addEventListener("click", () => { screen = "book"; renderScreen(); });
 $("regent").addEventListener("click", async () => {
   if (!confirm("Let a regent rule for 10 turns? The AI will take every decision for us.")) return;
   $("regent").disabled = true;
@@ -635,6 +707,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !$("moment").hidden) { $("moment").hidden = true; return; }
   if (e.key === "Enter") endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
+  if (e.key === "?") { screen = "book"; renderScreen(); }
   const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
   if (k) (screen === k ? closeScreen() : openScreen(k));
   if (e.key === "Tab") {

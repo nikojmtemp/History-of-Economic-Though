@@ -6,7 +6,19 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from stock.game import actions, ai, economy, finance, military, politics, research, rules, trade, victory
+from stock.game import (
+    actions,
+    ai,
+    economy,
+    events,
+    finance,
+    military,
+    politics,
+    research,
+    rules,
+    trade,
+    victory,
+)
 from stock.game.state import Nation, World
 
 
@@ -64,7 +76,10 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
         politics.update_unrest(world, n)
         military.check_revolts(world, n)
         politics.maybe_demand(world, n)
+        events.roll(world, n)
         n.feast_ready = max(0, n.feast_ready - 1)
+
+    events.world_events(world)
 
     # 9. research
     for n in living:
