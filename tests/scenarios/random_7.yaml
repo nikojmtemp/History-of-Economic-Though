@@ -1,0 +1,598 @@
+# Procedurally generated world: seed 7, 24 locations, 3 nations (stock.sim.worldgen; `python -m stock.sim gen --seed 7`).
+seed: 7
+locations:
+- id: forest_1
+  x: 1.87
+  y: 0.84
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: false
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 5.183
+    timber_yield: 1.28
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    forest_2: 1.11
+    forest_4: 1.03
+    forest_5: 0.78
+    valley_5: 0.91
+    forest_6: 0.87
+- id: mountain_1
+  x: 5.1
+  y: 0.15
+  terrain: MOUNTAIN
+  river: false
+  coast: false
+  resources:
+    game: false
+    grazing: false
+    arable: false
+    timber: false
+    ore: true
+    coal: false
+    fishing: false
+    rare: false
+    ore_yield: 1.28
+  capacity: {}
+  neighbours:
+    valley_4: 0.83
+    mountain_2: 0.88
+- id: steppe_1
+  x: 4.39
+  y: 2.96
+  terrain: STEPPE
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: true
+    fishing: false
+    rare: false
+    game_yield: 3.784
+    coal_yield: 1.09
+  capacity:
+    graze_cap: 1600.0
+    graze_depletion: 0.0
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    steppe_3: 0.88
+    steppe_4: 0.76
+- id: coast_1
+  x: 0.13
+  y: 2.74
+  terrain: COASTAL_PLAIN
+  river: true
+  coast: true
+  resources:
+    game: false
+    grazing: true
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: true
+    rare: false
+    fishing_yield: 1.47
+    arable_yield: 0.949
+  capacity:
+    graze_cap: 1000.0
+    graze_depletion: 0.0
+  neighbours:
+    valley_3: 0.99
+    coast_4: 1.01
+- id: coast_2
+  x: 0.15
+  y: 0.88
+  terrain: COASTAL_PLAIN
+  river: false
+  coast: true
+  resources:
+    game: false
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: true
+    rare: false
+    fishing_yield: 1.39
+  capacity:
+    graze_cap: 1000.0
+    graze_depletion: 0.0
+  neighbours:
+    forest_2: 1.15
+    forest_4: 1.04
+    coast_3: 0.68
+    coast_4: 0.86
+- id: plains_1
+  x: 2.1
+  y: 2.97
+  terrain: PLAINS
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.022
+    game_yield: 3.271
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+    graze_cap: 1200.0
+    graze_depletion: 0.0
+  neighbours:
+    valley_3: 1.0
+    steppe_2: 1.2
+    valley_6: 0.61
+- id: valley_1
+  x: 3.2
+  y: 1.58
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: false
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.111
+  capacity: {}
+  neighbours:
+    highland_1: 1.63
+    valley_2: 1.1
+    forest_5: 1.02
+    valley_5: 1.14
+    steppe_4: 1.06
+- id: highland_1
+  x: 3.77
+  y: 0.06
+  terrain: HILLS
+  river: false
+  coast: false
+  resources:
+    game: false
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+  capacity:
+    graze_cap: 1500.0
+    graze_depletion: 0.0
+  neighbours:
+    valley_1: 1.63
+    forest_3: 1.22
+    forest_5: 1.3
+    mountain_2: 0.76
+- id: valley_2
+  x: 4.28
+  y: 1.35
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: false
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.163
+  capacity: {}
+  neighbours:
+    valley_1: 1.1
+    steppe_3: 1.11
+    valley_4: 0.87
+    mountain_2: 0.78
+    steppe_4: 1.17
+- id: forest_2
+  x: 1.05
+  y: 1.58
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: true
+    ore: false
+    coal: true
+    fishing: false
+    rare: false
+    game_yield: 3.905
+    timber_yield: 1.41
+    coal_yield: 1.04
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+    graze_cap: 1000.0
+    graze_depletion: 0.0
+  neighbours:
+    forest_1: 1.11
+    coast_2: 1.15
+    valley_3: 1.38
+    forest_4: 1.3
+    coast_4: 0.89
+    valley_5: 1.02
+    valley_6: 1.16
+- id: forest_3
+  x: 2.55
+  y: 0.01
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 5.1
+    timber_yield: 1.53
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+    graze_cap: 1000.0
+    graze_depletion: 0.0
+  neighbours:
+    highland_1: 1.22
+    forest_5: 0.72
+    forest_6: 0.92
+- id: valley_3
+  x: 1.1
+  y: 2.96
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: true
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.215
+    game_yield: 3.851
+    timber_yield: 1.07
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    coast_1: 0.99
+    plains_1: 1.0
+    forest_2: 1.38
+    valley_6: 0.97
+- id: steppe_2
+  x: 3.29
+  y: 2.86
+  terrain: STEPPE
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 4.655
+  capacity:
+    graze_cap: 1500.0
+    graze_depletion: 0.0
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    plains_1: 1.2
+    steppe_4: 0.68
+- id: forest_4
+  x: 1.0
+  y: 0.28
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: false
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 4.887
+    timber_yield: 1.58
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    forest_1: 1.03
+    coast_2: 1.04
+    forest_2: 1.3
+    coast_3: 0.83
+    forest_6: 0.69
+- id: steppe_3
+  x: 4.92
+  y: 2.26
+  terrain: STEPPE
+  river: false
+  coast: false
+  resources:
+    game: false
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+  capacity:
+    graze_cap: 1500.0
+    graze_depletion: 0.0
+  neighbours:
+    steppe_1: 0.88
+    valley_2: 1.11
+    valley_4: 1.29
+    steppe_4: 1.1
+- id: valley_4
+  x: 5.06
+  y: 0.98
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.151
+    game_yield: 4.114
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    mountain_1: 0.83
+    valley_2: 0.87
+    steppe_3: 1.29
+    mountain_2: 0.84
+- id: coast_3
+  x: 0.18
+  y: 0.2
+  terrain: COASTAL_PLAIN
+  river: false
+  coast: true
+  resources:
+    game: false
+    grazing: false
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: true
+    rare: false
+    fishing_yield: 1.35
+  capacity: {}
+  neighbours:
+    coast_2: 0.68
+    forest_4: 0.83
+- id: coast_4
+  x: 0.18
+  y: 1.73
+  terrain: COASTAL_PLAIN
+  river: false
+  coast: true
+  resources:
+    game: false
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: true
+    rare: true
+    fishing_yield: 1.23
+    arable_yield: 0.841
+  capacity: {}
+  neighbours:
+    coast_1: 1.01
+    coast_2: 0.86
+    forest_2: 0.89
+- id: forest_5
+  x: 2.65
+  y: 0.72
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: false
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 5.411
+    timber_yield: 1.5
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    forest_1: 0.78
+    valley_1: 1.02
+    highland_1: 1.3
+    forest_3: 0.72
+    valley_5: 1.16
+- id: valley_5
+  x: 2.06
+  y: 1.72
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.182
+    game_yield: 3.399
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    forest_1: 0.91
+    valley_1: 1.14
+    forest_2: 1.02
+    forest_5: 1.16
+    valley_6: 0.7
+- id: mountain_2
+  x: 4.33
+  y: 0.57
+  terrain: MOUNTAIN
+  river: false
+  coast: false
+  resources:
+    game: false
+    grazing: false
+    arable: false
+    timber: false
+    ore: true
+    coal: false
+    fishing: false
+    rare: false
+    ore_yield: 1.3
+  capacity: {}
+  neighbours:
+    mountain_1: 0.88
+    highland_1: 0.76
+    valley_2: 0.78
+    valley_4: 0.84
+- id: steppe_4
+  x: 3.83
+  y: 2.44
+  terrain: STEPPE
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 4.465
+  capacity:
+    graze_cap: 1500.0
+    graze_depletion: 0.0
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    steppe_1: 0.76
+    valley_1: 1.06
+    valley_2: 1.17
+    steppe_2: 0.68
+    steppe_3: 1.1
+- id: valley_6
+  x: 1.88
+  y: 2.4
+  terrain: PLAINS
+  river: true
+  coast: false
+  resources:
+    game: false
+    grazing: false
+    arable: true
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    arable_yield: 1.107
+  capacity: {}
+  neighbours:
+    plains_1: 0.61
+    forest_2: 1.16
+    valley_3: 0.97
+    valley_5: 0.7
+- id: forest_6
+  x: 1.63
+  y: 0.01
+  terrain: FOREST
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: false
+    arable: false
+    timber: true
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 5.369
+    timber_yield: 1.38
+  capacity:
+    game_cap: 1200.0
+    game_depletion: 0.0
+  neighbours:
+    forest_1: 0.87
+    forest_3: 0.92
+    forest_4: 0.69
+nations:
+- id: nation_valley
+  start_location: valley_4
+  start_size: 230.0
+- id: nation_valley_2
+  start_location: valley_3
+  start_size: 210.0
+  ai: scripted
+- id: nation_forest
+  start_location: forest_6
+  start_size: 210.0
+  ai: scripted

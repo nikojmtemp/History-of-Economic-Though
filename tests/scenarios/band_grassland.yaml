@@ -1,0 +1,30 @@
+# Doc 08 scenario test "Herds become property": one band alone on a grazing
+# location with no other resource, so taming (not settling or hunting elsewhere)
+# is the only path off BAND. `tests/test_scenarios.py::test_herds_become_property`
+# checks it tames within 120 years and the largest herd-owner takes the seat.
+seed: 3
+locations:
+- id: grassland
+  terrain: STEPPE
+  river: false
+  coast: false
+  resources:
+    game: true
+    grazing: true
+    arable: false
+    timber: false
+    ore: false
+    coal: false
+    fishing: false
+    rare: false
+    game_yield: 4.0
+  capacity:
+    game_cap: 2000.0
+    game_depletion: 0.0
+    graze_cap: 2000.0
+    graze_depletion: 0.0
+  neighbours: {}
+nations:
+- id: nation_band
+  start_location: grassland
+  start_size: 60.0
