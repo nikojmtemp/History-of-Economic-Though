@@ -1,0 +1,451 @@
+// Stock — the client. It draws the snapshot and sends actions; it computes nothing
+// the engine owns (design doc §19).
+"use strict";
+
+let S = null;            // the current snapshot
+let sel = null;          // {type: "unit"|"node", id}
+let overlay = "political";
+let screen = null;
+let seenLog = 0;         // log length already shown as moments
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = (x, d = 1) => (x == null ? "–" : Math.abs(x) >= 1000 ? Math.round(x).toLocaleString() : (+x).toFixed(d).replace(/\.0+$/, ""));
+const sgn = (x, d = 1) => (x > 0 ? "▲ +" : x < 0 ? "▼ " : "") + fmt(x, d);
+const cls = (x) => (x > 0.005 ? "up" : x < -0.005 ? "down" : "muted");
+const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+const TERRAIN_FILL = { FOREST: "#6f8f5f", GRASSLAND: "#c2bb7c", VALLEY: "#94b87e", HILLS: "#a99a79",
+  COAST: "#9dbac6", MARSH: "#7f9a8f", MOUNTAIN: "#8a8480" };
+const FEATURE = { wild_herds: "wild herds", rare: "a rare resource", ore: "ore", coal: "coal" };
+const ORDER_COLOUR = { labour: "#8a6d3b", proprietors: "#7a5b8c", stock: "#3b5b8c" };
+const SOURCE_COLOUR = { hunting: "#6f8f5f", pasturage: "#c2bb7c", agriculture: "#94b87e", commerce: "#3b5b8c" };
+const SEAT = { council: "Council", chiefdom: "Chiefdom", civil: "Civil Government", interregnum: "Interregnum" };
+
+// --- server ------------------------------------------------------------------------
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { const t = await r.json().catch(() => ({})); toast(t.detail || `Error ${r.status}`); return null; }
+  return r.json();
+}
+async function act(action) {
+  const res = await api("/action", action);
+  if (!res) return false;
+  if (!res.ok) { toast(res.why); return false; }
+  update(res.state);
+  return true;
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), 2600);
+}
+
+// --- tooltips ----------------------------------------------------------------------
+
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-tip]");
+  const tip = $("tip");
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.dataset.tip; tip.hidden = false;
+});
+document.addEventListener("mousemove", (e) => {
+  const tip = $("tip");
+  if (tip.hidden) return;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - 330) + "px";
+  tip.style.top = Math.min(e.clientY + 14, innerHeight - 120) + "px";
+});
+const tipOf = (obj) => Object.entries(obj || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "number" ? sgnPlain(v) : v}`).join("\n");
+const sgnPlain = (v) => (v > 0 ? "+" : "") + fmt(v, 2);
+
+// --- top bar ------------------------------------------------------------------------
+
+function renderTop() {
+  const me = S.me;
+  const modeIdx = ["hunting", "pasturage", "agriculture", "commerce"].indexOf(me.mode);
+  const chall = me.mode_challenger ? `${me.mode_challenger} leads ${me.mode_streak}/3 turns` : SEAT[me.seat];
+  $("mode-banner").innerHTML = `Age of ${esc(S.modes[modeIdx])}<span class="sub">${esc(chall)}</span>`;
+  $("year").textContent = S.year < 0 ? `${-S.year} BC` : `AD ${S.year}`;
+  $("turn").textContent = `Turn ${S.turn} of ${S.last_turn} · ${me.name}`;
+  const b = me.breakdowns || {};
+  const res = [
+    ["Food", me.food, me.food_income, `Stored food, and this turn's surplus.\n${tipOf(b.food && b.food.by_source)}\nmade ${fmt(b.food?.made)} · eaten ${fmt(b.food?.eaten)}`],
+    ["Stock", me.stock, me.stock_income, `Productive capital. Savings become stock in proportion to Security (${pct(me.security)}); the rest is hoarded.\n${tipOf(b.stock)}`],
+    ["Treasury", me.treasury, me.treasury_income, me.seat === "civil" ? `Public revenue less spending.\n${tipOf(b.treasury && b.treasury.spent)}` : "No treasury before Civil Government."],
+    ["Sway", me.sway, me.sway_income, `Your political currency. ${SEAT[me.seat]}: ${me.seat === "council" ? "Consensus" : me.seat === "chiefdom" ? "Prestige" : "Authority"}.\n${tipOf(b.sway)}`],
+    ["Ingenuity", me.ingenuity, null, `Research per turn.\n${tipOf(b.ingenuity)}`],
+    ["Extent", me.extent, null, `Extent of the market: hands in your largest connected market plus towns and routes. Division of labour ×${fmt(me.dol, 2)}.`],
+    ["Hands", me.hands, null, `Your people, in hands. Herds ${fmt(me.herds, 0)}. Retainers ${fmt(me.retainers)}.`],
+  ];
+  $("resources").innerHTML = res.map(([k, v, d, tip]) => `<div class="res" data-tip="${esc(tip)}"><span class="k">${k}</span><span class="v">${fmt(v)}</span>${d == null ? "" : `<span class="d ${cls(d)}">${sgn(d)}</span>`}</div>`).join("");
+  const mine = S.nations.find((n) => n.id === me.id);
+  const leader = S.nations.filter((n) => n.met && n.alive).sort((a, b) => b.share - a.share)[0];
+  const h = S.hegemony;
+  const cd = h.leader ? `<span class="warn">${esc(S.nations.find((n) => n.id === h.leader)?.name)} ascendant: ${h.countdown} turns</span>` : "";
+  $("hegemony").innerHTML = `World produce: you ${pct(mine.share)} · lead ${esc(leader.name)} ${pct(leader.share)}<div class="bar"><i style="width:${pct(mine.share)}"></i><b style="left:40%"></b></div>${cd}`;
+  $("hegemony").dataset.tip = "Hegemony needs 40% of the world's produce (the mark) and half the other peoples in your orbit, held for 10 turns, from turn 50. Otherwise, at turn 150 the most opulent people (produce per head) wins.";
+  if (S.winner) $("turn").innerHTML += ` · <b class="warn">${esc(S.winner.text)}</b>`;
+}
+
+// --- society: orders and the annual produce --------------------------------------------
+
+function stack(parts, colours, total) {
+  return `<div class="stack">${Object.entries(parts).filter(([, v]) => v > 0).map(([k, v]) => `<span style="width:${(100 * v) / total}%;background:${colours[k] || "var(--ink-2)"}" data-tip="${esc(k)}: ${fmt(v)} (${pct(v / total)})"></span>`).join("")}</div>`;
+}
+function renderSociety() {
+  const me = S.me;
+  let h = `<h3>Orders of society</h3>`;
+  for (const [k, o] of Object.entries(me.orders)) {
+    if (o.size <= 0 && k !== "labour") { h += `<div class="order muted small">${o.name}: none yet</div>`; continue; }
+    const sat = o.satisfaction;
+    h += `<div class="order" data-tip="${esc(`${o.name}: ${fmt(o.size)} hands.\nIncome ${fmt(o.income)} (${pct(o.share)} of produce).\nFood ${pct(sat.food)} · comforts ${pct(sat.comfort)} · standing ${pct(sat.standing)} of what they expect.\nClout is political weight: wealth, and numbers times organisation.`)}">
+      <div class="row"><b style="color:${ORDER_COLOUR[k]}">${o.name}</b><span>${fmt(o.size)} hands</span></div>
+      <div class="row small"><span>share ${pct(o.share)}</span><span>clout ${pct(o.clout)}</span></div>
+      <div class="meter" data-tip="Contentment ${o.contentment}"><i style="width:${o.contentment}%;background:${o.contentment < 35 ? "var(--down)" : o.contentment > 60 ? "var(--up)" : "var(--ink-2)"}"></i></div>
+      <div class="small muted">content ${o.contentment}</div></div>`;
+  }
+  const total = me.produce || 1;
+  h += `<h3 data-tip="Where this turn's produce came from, who received it, and what became of it.">The annual produce · ${fmt(me.produce)}</h3>`;
+  h += `<div class="flow"><div class="lbl">Sources</div>${stack(me.sources, SOURCE_COLOUR, total)}</div>`;
+  h += `<div class="flow"><div class="lbl">Distribution — wages · profit · rent</div>${stack(me.split, { wages: ORDER_COLOUR.labour, profit: ORDER_COLOUR.stock, rent: ORDER_COLOUR.proprietors }, total)}</div>`;
+  if (me.uses && me.uses.consumed) {
+    const p = me.prices;
+    const uses = { food: me.uses.consumed.food * p.food, wares: me.uses.consumed.wares * p.wares, luxuries: me.uses.consumed.luxuries * p.luxuries, saved: me.uses.saved, taxes: me.uses.taxes };
+    const ut = Object.values(uses).reduce((a, b) => a + b, 0) || 1;
+    h += `<div class="flow"><div class="lbl">Uses</div>${stack(uses, { food: "#94b87e", wares: "#3b4a8a", luxuries: "#8a3b4a", saved: "#8c7a3b", taxes: "#5a5a5a" }, ut)}</div>`;
+  }
+  h += `<div class="small muted" data-tip="Market prices in baskets (one person's food for a turn).">Prices: food ${fmt(me.prices.food, 2)} · wares ${fmt(me.prices.wares, 2)} · luxuries ${fmt(me.prices.luxuries, 2)}</div>`;
+  h += `<div class="small muted">Wage ${fmt(me.wage, 2)} · bargaining ${fmt(me.bargaining, 2)} · per head ${fmt(me.per_head, 2)}</div>`;
+  const feastTip = me.feast ? `Feast: ${me.feast}` : "Spend stored food on a feast: Sway +5, everyone's contentment +5.";
+  h += `<div class="verbs"><button ${me.feast ? "disabled" : ""} data-tip="${esc(feastTip)}" onclick="act({kind:'feast'})">Feast</button>`;
+  if (me.seat === "chiefdom") h += `<button ${me.found_government ? "disabled" : ""} data-tip="${esc(me.found_government || "Found a civil government: a treasury, taxes and courts. 20 Sway.")}" onclick="act({kind:'found_government'})">Found government</button>`;
+  if (me.seat === "interregnum") h += `<button ${me.restore ? "disabled" : ""} data-tip="${esc(me.restore || "Restore the government: 30 Sway.")}" onclick="act({kind:'restore'})">Restore</button>`;
+  h += `</div>`;
+  $("society").innerHTML = h;
+}
+
+// --- the map ------------------------------------------------------------------------------
+
+const nodeById = () => Object.fromEntries(S.nodes.map((n) => [n.id, n]));
+const nationById = () => Object.fromEntries(S.nations.map((n) => [n.id, n]));
+const radius = (n) => 9 + Math.sqrt(n.hands || 0) * 1.8;
+
+function renderMap() {
+  const nodes = nodeById(), nations = nationById();
+  const svg = [];
+  for (const e of S.edges) {
+    const a = nodes[e.a], b = nodes[e.b];
+    if (e.kind === "sea") {
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - 18;
+      svg.push(`<path class="edge-sea" fill="none" d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}"/>`);
+    } else svg.push(`<line class="edge-${e.kind}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
+  }
+  const selUnit = sel && sel.type === "unit" ? S.units.find((u) => u.id === sel.id) : null;
+  const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok).map((m) => m.to) : []);
+  for (const n of S.nodes) {
+    const r = radius(n);
+    let fill = TERRAIN_FILL[n.terrain];
+    let stroke = "var(--rule)", sw = 1;
+    if (overlay === "political" && n.owner) { stroke = nations[n.owner]?.colour || "var(--ink)"; sw = 4; }
+    if (overlay === "unrest" && n.visible && n.owner) fill = n.unrest > 70 ? "#c0503e" : n.unrest > 40 ? "#e0b04e" : "#94b87e";
+    const feats = (n.features || []).map((f) => ({ wild_herds: "≈", rare: "✦", ore: "▲", coal: "■" }[f])).join("");
+    const works = n.works ? n.works.length : 0;
+    svg.push(`<g class="node ${n.visible ? "" : "fog"}" data-node="${n.id}" data-tip="${esc(nodeTip(n))}">
+      <circle class="body" cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      ${n.owner && works ? `<text class="node-sub" x="${n.x}" y="${n.y + 3}" text-anchor="middle">${works}⌂</text>` : ""}
+      <text class="node-label" x="${n.x}" y="${n.y + r + 11}" text-anchor="middle">${esc(n.name)}</text>
+      ${feats ? `<text class="node-sub" x="${n.x}" y="${n.y - r - 3}" text-anchor="middle">${feats}</text>` : ""}
+    </g>`);
+    if (reach.has(n.id)) svg.push(`<circle class="reach" cx="${n.x}" cy="${n.y}" r="${r + 6}"/>`);
+    if (sel && sel.type === "node" && sel.id === n.id) svg.push(`<circle class="selected-ring" cx="${n.x}" cy="${n.y}" r="${r + 5}"/>`);
+  }
+  // units: fanned out around their node
+  const byNode = {};
+  for (const u of S.units) (byNode[u.node] ||= []).push(u);
+  for (const [nid, us] of Object.entries(byNode)) {
+    const n = nodes[nid]; if (!n) continue;
+    us.forEach((u, i) => {
+      const ang = -Math.PI / 2 + (i - (us.length - 1) / 2) * 0.7;
+      const x = n.x + Math.cos(ang) * (radius(n) + 12), y = n.y + Math.sin(ang) * (radius(n) + 12) + 4;
+      const col = nations[u.nation]?.colour || "#555";
+      const isSel = selUnit && selUnit.id === u.id;
+      const shape = u.kind === "horde"
+        ? `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="${isSel ? "var(--warn)" : "var(--paper)"}" stroke-width="${isSel ? 3 : 1.5}"/>`
+        : `<path d="M${x},${y - 10} L${x + 10},${y + 7} L${x - 10},${y + 7} Z" fill="${col}" stroke="${isSel ? "var(--warn)" : "var(--paper)"}" stroke-width="${isSel ? 3 : 1.5}"/>`;
+      const tip = `${u.nation === S.me.id ? "Your" : esc(nations[u.nation]?.name) + "'s"} ${u.kind}: ${fmt(u.hands)} hands${u.herds ? `, ${fmt(u.herds, 0)} head of herds` : ""}${u.moves_left != null ? `\nMoves ${u.moves_left}/${u.max_moves}` : ""}`;
+      svg.push(`<g class="unit" data-unit="${u.id}" data-tip="${esc(tip)}">${shape}<text x="${x}" y="${y + (u.kind === "horde" ? 3 : 4)}" text-anchor="middle">${Math.round(u.hands)}</text></g>`);
+    });
+  }
+  $("map").innerHTML = svg.join("");
+  fitMap();
+}
+
+// the view frames what has been explored, never less than a region's worth
+function fitMap() {
+  const xs = S.nodes.map((n) => n.x), ys = S.nodes.map((n) => n.y);
+  let x0 = Math.min(...xs) - 60, x1 = Math.max(...xs) + 60, y0 = Math.min(...ys) - 60, y1 = Math.max(...ys) + 60;
+  const minW = 420, minH = 260;
+  if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = c - minW / 2; x1 = c + minW / 2; }
+  if (y1 - y0 < minH) { const c = (y0 + y1) / 2; y0 = c - minH / 2; y1 = c + minH / 2; }
+  $("map").setAttribute("viewBox", `${x0} ${y0} ${x1 - x0} ${y1 - y0}`);
+}
+
+function nodeTip(n) {
+  const lines = [`${n.name} — ${n.terrain_name}${n.river ? ", on a river" : ""}${n.coast ? ", coast" : ""}`];
+  const y = n.yields;
+  lines.push(`game ${fmt(y.game, 1)} · grazing ${fmt(y.grazing, 1)} · arable ${fmt(y.arable, 2)}${y.fish ? ` · fish ${y.fish}` : ""}`);
+  if (n.features.length) lines.push("Has " + n.features.map((f) => FEATURE[f]).join(", "));
+  if (n.visible) {
+    if (n.owner) lines.push(`Settled by ${S.nations.find((x) => x.id === n.owner)?.name}: ${fmt(n.hands)} hands`);
+    if (n.game != null) lines.push(`Game left ${pct(n.game)}`);
+    if (n.works && n.works.length) lines.push("Works: " + n.works.join(", "));
+    if (n.herds) lines.push(`Herds ${fmt(n.herds, 0)}`);
+  } else lines.push("(last seen)");
+  return lines.join("\n");
+}
+
+$("map").addEventListener("click", (e) => {
+  const u = e.target.closest("[data-unit]");
+  const nd = e.target.closest("[data-node]");
+  if (u) {
+    const unit = S.units.find((x) => x.id === u.dataset.unit);
+    if (unit && unit.nation === S.me.id) { sel = { type: "unit", id: unit.id }; renderAll(); return; }
+  }
+  if (nd) {
+    const id = nd.dataset.node;
+    const selUnit = sel && sel.type === "unit" ? S.units.find((x) => x.id === sel.id) : null;
+    if (selUnit && selUnit.moves && selUnit.moves.some((m) => m.to === id)) {
+      const m = selUnit.moves.find((m) => m.to === id);
+      if (!m.ok) { toast(m.why); return; }
+      act({ kind: "move", unit: selUnit.id, to: id }).then(() => { sel = { type: "unit", id: selUnit.id }; renderAll(); });
+      return;
+    }
+    const mine = S.units.filter((x) => x.node === id && x.nation === S.me.id);
+    sel = mine.length && !(sel && sel.type === "unit" && sel.id === mine[0].id) && !nodeById()[id].owner ? { type: "unit", id: mine[0].id } : { type: "node", id };
+    renderAll();
+  }
+});
+
+// --- selection card --------------------------------------------------------------------------
+
+const VERB_TIP = {
+  split: "Split the band in two (costs Sway): the way a people spreads.",
+  follow: "Follow the wild herds this turn: half the band hunts less, but 3 turns of following halves the cost of Taming.",
+  tame: "Tame the wild herds: the band becomes a horde, moving with its herds (2 moves).",
+  settle: "Settle here: the band's hands become a settlement, planting fields on arable ground.",
+};
+function renderSelection() {
+  const box = $("selection");
+  if (!sel) { box.innerHTML = `<span class="muted">Select a band on the map, or a settlement. Moves: click a band, then a ringed node.</span>`; return; }
+  if (sel.type === "unit") {
+    const u = S.units.find((x) => x.id === sel.id);
+    if (!u) { sel = null; return renderSelection(); }
+    const n = nodeById()[u.node];
+    let h = `<h2>${u.kind === "horde" ? "Horde" : "Band"} at ${esc(n.name)}</h2>`;
+    h += `<div>${fmt(u.hands)} hands${u.herds ? ` · ${fmt(u.herds, 0)} head of herds` : ""} · moves ${u.moves_left}/${u.max_moves}${u.followed ? " · following the herds" : ""}</div>`;
+    h += `<div class="verbs">`;
+    for (const [k, why] of Object.entries(u.verbs)) {
+      const label = { split: `Split (${u.split_cost} Sway)`, follow: "Follow the herds", tame: "Tame", settle: n.owner === S.me.id ? "Join settlement" : "Settle" }[k];
+      h += `<button ${why ? "disabled" : ""} data-tip="${esc(why ? `${VERB_TIP[k]}\nNot now: ${why}` : VERB_TIP[k])}" onclick="act({kind:'${k}',unit:'${u.id}'})">${label}</button>`;
+    }
+    for (const other of u.merge_with) h += `<button onclick="act({kind:'merge',unit:'${u.id}',other:'${other}'})">Merge</button>`;
+    h += `</div><div class="small muted">A band that does not move hunts where it stands. Move by clicking a ringed neighbour.</div>`;
+    box.innerHTML = h;
+    return;
+  }
+  const n = nodeById()[sel.id];
+  if (!n) { sel = null; return renderSelection(); }
+  let h = `<h2>${esc(n.name)} <span class="muted small">${n.terrain_name}${n.river ? " · river" : ""}${n.coast ? " · coast" : ""}</span></h2>`;
+  h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
+  if (n.owner === S.me.id) {
+    h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)}</span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
+    h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button></div>`;
+    h += `<div class="build">`;
+    for (const b of n.buildable) {
+      if (b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")) continue;
+      const ret = b.return != null ? `<span class="ret ${b.return >= (S.me.breakdowns.stock?.rate_of_profit || 0.12) ? "up" : "down"}">${pct(b.return)}</span>` : "";
+      const w = S.works.find((x) => x.key === b.key);
+      const tip = `${w.description}\nCost ${b.cost} ${b.public ? "Treasury" : "Stock"}.${b.return != null ? `\nExpected return ${pct(b.return)} against a rate of profit of ${pct(S.me.breakdowns.stock?.rate_of_profit)}: below it, investors want a bounty.` : ""}${b.why ? `\nNot now: ${b.why}` : ""}`;
+      h += `<button ${b.why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'build',node:'${n.id}',work:'${b.key}'})">${esc(b.name)} · ${b.cost}${b.public ? "T" : ""} ${ret}</button>`;
+    }
+    h += `</div>`;
+  }
+  const q = S.me.build_queue;
+  if (q.length) {
+    h += `<h3>Investment queue</h3>` + q.map((it, i) => `<div class="small">${i + 1}. ${esc(S.works.find((x) => x.key === it.work)?.name)} at ${esc(nodeById()[it.node]?.name)} — <span class="muted">${esc(it.status)}</span> <button onclick="act({kind:'unqueue',index:${i}})">✕</button></div>`).join("");
+  }
+  box.innerHTML = h;
+}
+
+// --- the now column ---------------------------------------------------------------------------
+
+function renderNow() {
+  const me = S.me;
+  $("decisions").innerHTML = me.decisions.map((d) => `<div class="decision"><b class="serif">${esc(d.title)}</b><div class="small">${esc(d.text)}</div>${d.choices.map((c) => `<button data-tip="${esc(c.effect)}" onclick="act({kind:'decide',id:'${d.id}',choice:'${c.key}'})">${esc(c.label)}</button>`).join("")}</div>`).join("");
+  const cur = me.researching ? S.discoveries.find((d) => d.key === me.researching) : null;
+  $("research-now").innerHTML = cur
+    ? `Researching <b>${esc(cur.name)}</b>: ${fmt(me.research_progress)} / ${fmt(me.research_cost)} (+${fmt(me.ingenuity)}/turn)`
+    : `<span class="warn">Choose a discovery ▸</span> <span class="muted">(${fmt(me.research_progress)} ingenuity banked)</span>`;
+  $("log").innerHTML = S.log.slice().reverse().map((e) => `<div class="ev ${e.kind}"><div class="t">Turn ${e.turn}</div>${esc(e.text)}${e.quote ? `<q>${esc(e.quote)}</q>` : ""}</div>`).join("");
+  $("end-turn").disabled = !!S.winner && false;
+  $("end-turn").textContent = me.decisions.length ? "Answer the decision" : `End turn ${S.turn}`;
+}
+
+function showMoments(prevTurn) {
+  const fresh = S.log.filter((e) => e.turn === prevTurn && ["moment", "mode", "regression", "victory"].includes(e.kind));
+  if (!fresh.length) return;
+  const e = fresh[0];
+  $("moment").innerHTML = `<div class="card"><h2>${e.kind === "regression" ? "A regression" : e.kind === "victory" ? "The end of the game" : "A moment"}</h2><p class="serif">${esc(e.text)}</p>${e.quote ? `<q>“${esc(e.quote)}”<br><span class="small">— Adam Smith, The Wealth of Nations</span></q>` : ""}<button class="primary" onclick="$('moment').hidden=true">Continue</button></div>`;
+  $("moment").hidden = false;
+}
+
+// --- screens ------------------------------------------------------------------------------------
+
+function openScreen(name) { screen = name; renderScreen(); }
+function closeScreen() { screen = null; $("screen").hidden = true; }
+function renderScreen() {
+  if (!screen) return;
+  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, nations: screenNations, book: screenBook }[screen]();
+  $("screen-body").innerHTML = `<button class="close" onclick="closeScreen()">Close ✕</button>` + body;
+  $("screen").hidden = false;
+}
+
+function screenDiscoveries() {
+  const lanes = ["subsistence", "exchange", "force", "order"];
+  const eras = ["Hunting", "Pasturage", "Agriculture", "Commerce"];
+  let h = `<h2>Discoveries</h2><p class="muted">Ingenuity ${fmt(S.me.ingenuity)} a turn. Meeting a discovery's observation halves its cost; peoples you know who have it already make it cheaper still.</p><div class="web"><div></div>${eras.map((e) => `<div class="era">${e}</div>`).join("")}`;
+  for (const lane of lanes) {
+    h += `<div class="lane">${lane[0].toUpperCase() + lane.slice(1)}</div>`;
+    for (let era = 1; era <= 4; era++) {
+      h += `<div class="cell">`;
+      for (const d of S.discoveries.filter((x) => x.lane === lane && x.era === era)) {
+        const req = d.requires.map((g) => g.map((k) => S.discoveries.find((x) => x.key === k).name).join(" or ")).join(", and ");
+        const tip = `${d.unlocks}${req ? `\nNeeds: ${req}` : ""}${d.quote ? `\n\n“${d.quote}”` : ""}`;
+        h += `<div class="disc ${d.state} ${S.me.researching === d.key ? "current" : ""}" data-tip="${esc(tip)}" ${d.state === "available" ? `onclick="act({kind:'research',key:'${d.key}'}).then(renderScreen)"` : ""}>
+          <div class="name">${esc(d.name)}</div><div class="small">${esc(d.unlocks)}</div>
+          ${d.state !== "known" ? `<div class="small">Cost ${fmt(d.cost)}${d.diffusion ? ` <span class="up">(−${pct(d.diffusion)} known by ${esc(d.known_by.join(", "))})</span>` : ""}</div>` : ""}
+          ${d.observation && d.state !== "known" ? `<div class="small obs ${d.observed ? "met" : ""}">${d.observed ? "✓" : `${pct(d.progress)} ·`} ${esc(d.observation)}</div>` : ""}</div>`;
+      }
+      h += `</div>`;
+    }
+  }
+  return h + `</div>`;
+}
+
+async function forecastOption(pillar, option, el) {
+  const res = await api("/forecast", { kind: "institution", pillar, option });
+  if (!res) return;
+  if (!res.ok) { el.textContent = res.why; return; }
+  const d = res.delta;
+  const names = { food: "food", stock: "stock", treasury: "treasury", sway: "sway", produce: "produce", labour_contentment: "Labour", proprietors_contentment: "Proprietors", stock_contentment: "Stock-holders" };
+  el.innerHTML = "Forecast: " + Object.entries(d).filter(([, v]) => Math.abs(v) >= 0.05).map(([k, v]) => `<span class="${cls(v)}">${names[k] || k} ${sgnPlain(v)}</span>`).join(" · ") || "no visible change next turn";
+}
+function screenInstitutions() {
+  let h = `<h2>Institutions</h2><p class="muted">One option per pillar. Changing costs Sway: more when the orders that oppose it hold clout, less when supporters do. The change comes into force next turn; a pillar then rests five turns.</p><div class="pillars">`;
+  for (const p of S.institutions) {
+    h += `<div><h3>${esc(p.name)}${p.cooldown ? ` <span class="muted small">rests ${p.cooldown}</span>` : ""}</h3>`;
+    for (const o of p.options) {
+      const who = (xs) => xs.map((x) => `<span style="color:${ORDER_COLOUR[x]}">${S.me.orders[x].name}</span>`).join(", ");
+      h += `<div class="opt ${o.active ? "active" : ""} ${o.pending ? "pending" : ""}"><b class="serif">${esc(o.name)}</b>${o.active ? " · in force" : o.pending ? " · next turn" : ""}
+        <div class="small">${esc(o.effect)}</div>
+        ${o.supports.length ? `<div class="small">For: ${who(o.supports)}</div>` : ""}${o.opposes.length ? `<div class="small">Against: ${who(o.opposes)}</div>` : ""}
+        ${o.active || o.pending ? "" : o.why ? `<div class="small muted">${esc(o.why)}</div>` : `<button onclick="act({kind:'institution',pillar:'${p.key}',option:'${o.key}'}).then(renderScreen)">Enact · ${o.cost} Sway</button> <button onclick="forecastOption('${p.key}','${o.key}',this.nextElementSibling)">Forecast</button><div class="fc"></div>`}</div>`;
+    }
+    h += `</div>`;
+  }
+  return h + `</div>`;
+}
+
+function screenTreasury() {
+  const me = S.me;
+  if (me.seat !== "civil") return `<h2>Treasury</h2><p>No treasury yet. A people needs owners of herds or land before it needs a magistrate: become a chiefdom, discover Magistracy, then found a government.</p>`;
+  const t = me.tax || {};
+  let h = `<h2>Treasury · ${fmt(me.treasury)}</h2><h3>Revenue: ${esc(S.institutions.find((p) => p.key === "revenue").options.find((o) => o.active).name)}</h3>`;
+  h += `<div class="verbs">${["light", "moderate", "heavy"].map((r) => `<button class="${me.tax_rate === r ? "on" : ""}" onclick="act({kind:'tax',rate:'${r}'}).then(renderScreen)">${r}</button>`).join("")}</div>`;
+  h += `<p>Collected last turn: ${fmt(t.collected)}</p><table class="plain"><tr><th>Order</th><th>Pays nominally</th><th>Actually bears</th></tr>`;
+  for (const o of ["labour", "proprietors", "stock"]) h += `<tr><td>${me.orders[o].name}</td><td class="n">${fmt(t.nominal?.[o], 2)}</td><td class="n">${fmt(t.actual?.[o], 2)}</td></tr>`;
+  h += `</table><p class="muted small">Who hands over the money is not always who ends up poorer: an excise on necessaries raises what labour must be paid, and part of it comes back out of profit and rent.</p><h3>Spending</h3><table class="plain">`;
+  const tips = { justice: "Security, labour's organisation, fewer riots, better tax collection.", instruction: "Offsets the dulling of divided labour; Ingenuity.", court: "Sway." };
+  for (const line of ["justice", "instruction", "court"]) h += `<tr><td data-tip="${tips[line]}">${line}</td><td>${[0, 1, 2, 3].map((lv) => `<button class="${me.budget[line] === lv ? "on" : ""}" onclick="act({kind:'budget',line:'${line}',level:${lv}}).then(renderScreen)">${lv}</button>`).join(" ")}</td><td class="n">${fmt(me.breakdowns.treasury?.spent?.[line], 1)}</td></tr>`;
+  return h + `</table>`;
+}
+
+function spark(hist, key, colour) {
+  if (!hist || hist.length < 2) return "";
+  const vals = hist.map((h) => h[key]); const max = Math.max(...vals, 1e-9);
+  const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * 200},${40 - (v / max) * 38}`).join(" ");
+  return `<svg width="200" height="42"><polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"/></svg>`;
+}
+function screenNations() {
+  let h = `<h2>Peoples</h2><table class="plain"><tr><th>People</th><th>Age</th><th>Seat</th><th>Hands</th><th>World share</th><th>Per head</th><th>Relations</th><th>Produce</th><th></th></tr>`;
+  for (const n of S.nations) {
+    if (!n.met) { h += `<tr><td class="muted">${esc(n.name)}</td><td colspan="8" class="muted">not yet met</td></tr>`; continue; }
+    const btn = n.id === S.me.id ? "" : n.trading ? '<span class="up">bartering</span>' : `<button ${n.barter ? "disabled" : ""} data-tip="${esc(n.barter || "Open a barter route: both markets widen, knowledge flows, relations improve.")}" onclick="act({kind:'barter',nation:'${n.id}'}).then(renderScreen)">Barter</button>`;
+    h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
+  }
+  h += `</table><h3>Your three curves</h3><p class="muted small">Produce per head · labour's share of produce · freedom. Not a score: a record.</p>`;
+  h += `<div>${spark(S.me.history, "per_head", "var(--accent)")} ${spark(S.me.history, "labour_share", ORDER_COLOUR.labour)} ${spark(S.me.history, "freedom", "var(--up)")}</div>`;
+  return h;
+}
+
+function screenBook() {
+  const entries = [
+    ["The four stages", "A people's mode of subsistence is whichever of hunting, herds, fields or commerce yields the most. What can be owned decides what can be accumulated, and so what the people become. Modes can fall back."],
+    ["Stock", "Capital: what is saved and set to work. Stock-holders save most of their profit, proprietors little of their rent, labourers only from pay above need. Savings become stock in proportion to Security; the rest is hoarded."],
+    ["Extent of the market", "The hands your market reaches: settlements joined by rivers, roads and ports, plus towns and trade routes. The division of labour grows with it, and manufactories and workshops with that."],
+    ["Wages, profit, rent", "Each work's produce pays wages first, then the ordinary profit on the stock in it, and the remainder is rent to whoever owns the ground. Who owns it is an institution."],
+    ["Retainers or luxuries", "Proprietors spend their surplus on standing. With nothing to buy, they keep retainers: idle hands, armed, owing loyalty to them rather than to you. Give them luxuries and they dismiss them."],
+    ["The invisible hand", "Under free labour, hands move to the best-paid work themselves; you cannot place them, only change what pays. Under serfdom you place them yourself, at three-quarters of the output."],
+    ["Who really pays", "The nominal payer of a tax and the one who ends up poorer are often different. The Treasury screen shows both."],
+    ["Hegemony and opulence", "A people with 40% of the world's produce and half the others in its orbit for ten turns wins by hegemony. Otherwise, at the last turn, the people with the most produce per head wins by opulence."],
+  ];
+  return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
+}
+
+// --- wiring -------------------------------------------------------------------------------------
+
+function renderAll() { renderTop(); renderSociety(); renderMap(); renderSelection(); renderNow(); renderScreen(); }
+function update(state) { S = state; renderAll(); }
+
+document.querySelectorAll("#screens [data-screen]").forEach((b) => b.addEventListener("click", () => (screen === b.dataset.screen ? closeScreen() : openScreen(b.dataset.screen))));
+document.querySelectorAll("#overlays [data-overlay]").forEach((b) => b.addEventListener("click", () => {
+  overlay = b.dataset.overlay;
+  document.querySelectorAll("#overlays button").forEach((x) => x.classList.toggle("on", x === b));
+  renderMap();
+}));
+$("research-now").addEventListener("click", () => openScreen("discoveries"));
+$("new-world").addEventListener("click", async () => {
+  const spec = prompt("World: random, or random:SEED:NODES:NATIONS", "random");
+  if (spec == null) return;
+  const s = await api("/new", { spec });
+  if (s) { sel = null; update(s); }
+});
+async function endTurn() {
+  if (S.me.decisions.length) { toast("Answer the waiting decision first."); return; }
+  const prev = S.turn;
+  $("end-turn").disabled = true;
+  const s = await api("/turn", {});
+  $("end-turn").disabled = false;
+  if (s) { update(s); showMoments(prev); }
+}
+$("end-turn").addEventListener("click", endTurn);
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "Enter" && !$("moment").hidden) { $("moment").hidden = true; return; }
+  if (e.key === "Enter") endTurn();
+  if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
+  const k = { d: "discoveries", i: "institutions", t: "treasury", p: "nations", b: "book" }[e.key.toLowerCase()];
+  if (k) (screen === k ? closeScreen() : openScreen(k));
+  if (e.key === "Tab") {
+    e.preventDefault();
+    const mine = S.units.filter((u) => u.nation === S.me.id);
+    if (!mine.length) return;
+    const i = sel && sel.type === "unit" ? mine.findIndex((u) => u.id === sel.id) : -1;
+    sel = { type: "unit", id: mine[(i + 1) % mine.length].id }; renderAll();
+  }
+});
+
+api("/state").then((s) => {
+  if (!s) return;
+  const mine = s.units.find((u) => u.nation === s.me.id);
+  if (mine) sel = { type: "unit", id: mine.id };
+  update(s);
+});

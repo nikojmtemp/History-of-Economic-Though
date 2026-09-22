@@ -1,0 +1,145 @@
+#: Canvas aspect (the map pane is 1000x600, `api.layout`).
+CANVAS_W, CANVAS_H = 5.0, 3.0
+#: Best-candidate sampling: candidates tried per placed point.
+CANDIDATES_PER_POINT = 24
+# --- geometry ------------------------------------------------------------------------
+
+
+def _sample_points(rng: random.Random, n: int) -> list[tuple[float, float]]:
+    """Best-candidate sampling: each new point is the one of `CANDIDATES_PER_POINT`
+    random candidates farthest from every point placed so far."""
+
+    points: list[tuple[float, float]] = [(rng.uniform(0.5, CANVAS_W - 0.5), rng.uniform(0.5, CANVAS_H - 0.5))]
+    while len(points) < n:
+        best: tuple[float, float] | None = None
+        best_d = -1.0
+        for _ in range(CANDIDATES_PER_POINT):
+            c = (rng.uniform(0.0, CANVAS_W), rng.uniform(0.0, CANVAS_H))
+            d = min(math.dist(c, p) for p in points)
+            if d > best_d:
+                best_d, best = d, c
+        assert best is not None
+        points.append(best)
+    return points
+
+
+def _gabriel_edges(points: list[tuple[float, float]]) -> list[tuple[int, int]]:
+    """Edges `(i, j)` of the Gabriel graph: no third point inside the circle with
+    `ij` as diameter. O(n^3) — fine for the few dozen locations a map holds."""
+
+    n = len(points)
+    edges: list[tuple[int, int]] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            (ax, ay), (bx, by) = points[i], points[j]
+            cx, cy = (ax + bx) / 2.0, (ay + by) / 2.0
+            r2 = ((ax - bx) ** 2 + (ay - by) ** 2) / 4.0
+            blocked = False
+            for k in range(n):
+                if k == i or k == j:
+                    continue
+                px, py = points[k]
+                if (px - cx) ** 2 + (py - cy) ** 2 < r2 - 1e-12:
+                    blocked = True
+                    break
+            if not blocked:
+                edges.append((i, j))
+    return edges
+
+
+def _neighbours(n: int, edges: list[tuple[int, int]]) -> list[list[int]]:
+    nb: list[list[int]] = [[] for _ in range(n)]
+    for i, j in edges:
+        nb[i].append(j)
+        nb[j].append(i)
+    return nb
+
+
+# --- relief ----------------------------------------------------------------------------
+
+
+def _relief(
+    rng: random.Random, points: list[tuple[float, float]]
+) -> tuple[list[float], list[float], list[float], int]:
+    """Returns `(elevation, moisture, distance_to_ocean, ocean_side)` per point, each
+    field in [0, 1]. The ocean lies along one side of the canvas (0 W, 1 E, 2 S, 3 N)."""
+
+    side = rng.randrange(4)
+
+    def ocean_distance(p: tuple[float, float]) -> float:
+        x, y = p
+        return {0: x, 1: CANVAS_W - x, 2: y, 3: CANVAS_H - y}[side]
+
+    far = CANVAS_W if side in (0, 1) else CANVAS_H
+    hills = [
+        (rng.uniform(0.0, CANVAS_W), rng.uniform(0.0, CANVAS_H), rng.uniform(0.5, 1.1), rng.uniform(0.3, 1.0))
+        for _ in range(4)
+    ]
+    wet = [
+        (
+            rng.uniform(0.0, CANVAS_W),
+            rng.uniform(0.0, CANVAS_H),
+            rng.uniform(0.6, 1.4),
+            rng.choice((-1.0, 1.0)),
+        )
+        for _ in range(5)
+    ]
+
+    elevation: list[float] = []
+    moisture: list[float] = []
+    distance: list[float] = []
+    for p in points:
+        d = ocean_distance(p)
+        e = 0.15 + 0.6 * (d / far)  # climbs inland
+        for hx, hy, hr, hh in hills:
+            e += hh * math.exp(-((p[0] - hx) ** 2 + (p[1] - hy) ** 2) / (2.0 * hr * hr))
+        e += rng.uniform(-0.08, 0.08)
+        m = 0.5 - 0.25 * (d / far)  # sea air
+        for wx, wy, wr, ws in wet:
+            m += 0.35 * ws * math.exp(-((p[0] - wx) ** 2 + (p[1] - wy) ** 2) / (2.0 * wr * wr))
+        m += rng.uniform(-0.1, 0.1)
+        elevation.append(e)
+        moisture.append(m)
+        distance.append(d / far)
+
+    def norm(v: list[float]) -> list[float]:
+        lo, hi = min(v), max(v)
+        return [(x - lo) / (hi - lo) if hi > lo else 0.5 for x in v]
+
+    return norm(elevation), norm(moisture), distance, side
+
+
+def _carve_rivers(
+    rng: random.Random,
+    elevation: list[float],
+    distance: list[float],
+    nb: list[list[int]],
+    count: int,
+) -> list[list[int]]:
+    """Each river starts at a high, inland location and walks strictly downhill
+    along edges until it can go no lower, preferring the neighbour closest to the
+    ocean. Rivers don't share a source or cross a previous river's path."""
+
+    n = len(elevation)
+    taken: set[int] = set()
+    rivers: list[list[int]] = []
+    sources = sorted(range(n), key=lambda i: elevation[i] * 0.7 + distance[i] * 0.3, reverse=True)
+    for src in sources:
+        if len(rivers) >= count:
+            break
+        if src in taken:
+            continue
+        path = [src]
+        cur = src
+        while True:
+            lower = [j for j in nb[cur] if elevation[j] < elevation[cur] and j not in taken]
+            if not lower:
+                break
+            cur = min(lower, key=lambda j: (distance[j], elevation[j]))
+            path.append(cur)
+        if len(path) >= 3:
+            rivers.append(path)
+            taken.update(path)
+    return rivers
+
+

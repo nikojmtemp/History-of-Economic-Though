@@ -18,19 +18,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e .
-          pip install -r requirements-dev.txt
+          pip install -r requirements-dev.txt httpx
 
       - name: ruff
-        run: ruff check .
+        run: ruff check . && ruff format --check stock tests tools
 
       - name: mypy --strict
         run: mypy stock
 
-      - name: pytest (invariants, scenario tests, and the rest of the suite)
+      - name: pytest (worldgen, verbs, invariants, pacing, API)
         run: pytest -q
 
-      - name: tools smoke test (batch + sweep run headless, a tiny scenario/seed set)
-        run: |
-          python -m tools.batch --scenario tests/scenarios/three_bands.yaml --seeds 1 --years 20 --out /tmp/ci-runs
-          python -m tools.sweep --scenario tests/scenarios/three_bands.yaml --seeds 1 --years 20 \
-            --grid politics.k_lapse=5 --out /tmp/ci-sweep
+      - name: balance sweep (design doc §20 targets)
+        run: python -m tools.sweep --seeds 10

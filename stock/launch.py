@@ -86,7 +86,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     import uvicorn
 
-    from stock.api.server import create_app
+    from stock.server import create_app
 
     port = args.port if args.port is not None else free_port()
     url = f"http://{HOST}:{port}"

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div id="mode-banner" data-tip="The mode of subsistence: whichever of hunting, herds, fields or commerce yields the most produce."></div>
+    <div id="clock"><span id="year"></span><span id="turn"></span></div>
+    <div id="resources"></div>
+    <div id="hegemony"></div>
+    <nav id="screens">
+      <button data-screen="discoveries" title="Discoveries (D)">Discoveries</button>
+      <button data-screen="institutions" title="Institutions (I)">Institutions</button>
+      <button data-screen="treasury" title="Treasury (T)">Treasury</button>
+      <button data-screen="nations" title="Peoples (P)">Peoples</button>
+      <button data-screen="book" title="Commonplace Book (B)">Book</button>
+      <button id="new-world" title="Start a new world">New</button>
+    </nav>
+  </header>
+  <aside id="society"></aside>
+  <main id="board">
+    <svg id="map" viewBox="-30 -30 1060 660" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="overlays">
+      <button data-overlay="political" class="on">Political</button>
+      <button data-overlay="terrain">Terrain</button>
+      <button data-overlay="unrest">Unrest</button>
+    </div>
+  </main>
+  <aside id="now">
+    <section id="decisions"></section>
+    <section id="research-now"></section>
+    <h3>Chronicle</h3>
+    <section id="log"></section>
+    <button id="end-turn">End turn</button>
+  </aside>
+  <footer id="selection"></footer>
+</div>
+<div id="screen" hidden><div id="screen-body"></div></div>
+<div id="moment" hidden></div>
+<div id="tip" hidden></div>
+<div id="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
