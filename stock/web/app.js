@@ -80,10 +80,13 @@ function renderTop() {
   const mine = S.nations.find((n) => n.id === me.id);
   const leader = S.nations.filter((n) => n.met && n.alive).sort((a, b) => b.share - a.share)[0];
   const h = S.hegemony;
-  const cd = h.leader ? `<span class="warn">${esc(S.nations.find((n) => n.id === h.leader)?.name)} ascendant: ${h.countdown} turns</span>` : "";
-  $("hegemony").innerHTML = `World produce: you ${pct(mine.share)} · lead ${esc(leader.name)} ${pct(leader.share)}<div class="bar"><i style="width:${pct(mine.share)}"></i><b style="left:40%"></b></div>${cd}`;
-  $("hegemony").dataset.tip = "Hegemony needs 40% of the world's produce (the mark) and half the other peoples in your orbit, held for 10 turns, from turn 50. Otherwise, at turn 150 the most opulent people (produce per head) wins.";
-  if (S.winner) $("turn").innerHTML += ` · <b class="warn">${esc(S.winner.text)}</b>`;
+  const cd = S.winner ? `<span class="warn">${esc(S.winner.text)}</span>`
+    : h.leader ? `<span class="warn">${esc(nationName(h.leader))} ascendant: ${h.countdown} turns to hegemony</span>` : "";
+  const orbitNote = me.orbit_of ? ` · <span class="warn">in ${esc(nationName(me.orbit_of))}'s orbit</span>` : "";
+  $("hegemony").innerHTML = `Produce ${pct(mine.share)} of 40% · orbit ${me.sphere.length}/${me.sphere_need}${orbitNote}<div class="bar"><i style="width:${pct(mine.share)}"></i><b style="left:40%"></b></div>${cd}`;
+  const held = Object.entries(me.levers_on_us || {}).map(([a, l]) => `${nationName(a)} ${l.detail} (${l.kind})`).join("\n");
+  $("hegemony").dataset.tip = `Hegemony: 40% of the world's produce and half the other peoples in your orbit (${me.sphere_need}), held for 10 turns, from turn 50. The others will combine against whoever gets there. Otherwise, at turn 150 the most opulent people wins, if it is in no one's orbit.\nIn our orbit: ${me.sphere.map(nationName).join(", ") || "nobody"}.${held ? `\nLevers over us:\n${held}` : ""}`;
+
 }
 
 function armyTip(me) {
@@ -165,6 +168,11 @@ function renderMap() {
     let stroke = "var(--rule)", sw = 1;
     if (overlay === "political" && n.owner) { stroke = nations[n.owner]?.colour || "var(--ink)"; sw = 4; }
     if (overlay === "unrest" && n.visible && n.owner) fill = n.unrest > 70 ? "#c0503e" : n.unrest > 40 ? "#e0b04e" : "#94b87e";
+    if (overlay === "orbits" && n.visible && n.owner) {
+      const centre = nations[n.owner]?.orbit_of;
+      fill = centre ? nations[centre]?.colour || fill : nations[n.owner]?.colour || fill;
+      stroke = nations[n.owner]?.colour || stroke; sw = 4;
+    }
     const feats = (n.features || []).map((f) => ({ wild_herds: "≈", rare: "✦", ore: "▲", coal: "■" }[f])).join("");
     const works = n.works ? n.works.length : 0;
     svg.push(`<g class="node ${n.visible ? "" : "fog"}" data-node="${n.id}" data-tip="${esc(nodeTip(n))}">
@@ -398,6 +406,52 @@ function screenTrade() {
   return h + `</table>`;
 }
 
+// --- credit, orbits, reports ------------------------------------------------------------------
+
+function creditSection(me) {
+  const c = me.credit;
+  let h = `<h3>Public credit</h3><p class="small muted">Borrow from our own Stock-holders (it crowds out private investment) or from another people (owe them more than five turns of revenue and we fall into their orbit). Interest is ${pct(c.rate)} a turn at our present debt.</p>`;
+  h += `<p>Debt ${fmt(c.total)} · interest last turn ${fmt(c.service, 1)}${c.closed ? ` · <span class="down">credit closed until turn ${c.closed + 1}</span>` : ""}</p>`;
+  if (c.debts.length) h += `<table class="plain"><tr><th>Lender</th><th>Owed</th><th>Rate</th><th>Since</th></tr>${c.debts.map((d) => `<tr><td>${d.lender === "domestic" ? "our Stock-holders" : esc(nationName(d.lender))}</td><td class="n">${fmt(d.principal)}</td><td class="n">${pct(d.rate)}</td><td class="n">${d.since}</td></tr>`).join("")}</table>`;
+  const amt = Math.round(c.limit / 2);
+  h += `<div class="verbs"><button ${c.borrow_home ? "disabled" : ""} data-tip="${esc(c.borrow_home || `Borrow ${amt} from our own Stock-holders.`)}" onclick="act({kind:'borrow',source:'domestic',amount:${amt}}).then(renderScreen)">Borrow ${amt} at home</button>`;
+  h += `<button ${c.repay ? "disabled" : ""} data-tip="${esc(c.repay || "Repay what the Treasury can spare, foreign lenders first.")}" onclick="act({kind:'repay',amount:${Math.max(0, Math.floor(me.treasury))}}).then(renderScreen)">Repay</button>`;
+  if (c.debts.length) h += `<button data-tip="Default: the debt is wiped; lenders lose it, our Stock-holders and foreign lenders turn on us, and no one lends for 10 turns." onclick="if(confirm('Default on ${fmt(c.total)} of debt?'))act({kind:'default'}).then(renderScreen)">Default</button>`;
+  return h + `</div><p class="small muted">To borrow abroad, use the Peoples screen.</p>`;
+}
+function borrowButton(n) {
+  if (S.me.seat !== "civil") return "";
+  const amt = Math.round(S.me.credit.limit / 2);
+  return ` <button ${n.lend ? "disabled" : ""} data-tip="${esc(n.lend || `Ask ${n.name} to lend us ${amt}. Owe them enough and we fall into their orbit.`)}" onclick="act({kind:'borrow',source:'${n.id}',amount:${amt}}).then(renderScreen)">Borrow</button>`;
+}
+function orbitCell(n) {
+  const parts = [];
+  if (n.orbit_of) parts.push(`<span class="warn">orbits ${esc(nationName(n.orbit_of))}</span>`);
+  if (n.sphere && n.sphere.length) parts.push(`holds ${n.sphere.map((x) => esc(nationName(x))).join(", ")}`);
+  const levers = Object.entries(n.levers_on_them || {}).map(([a, l]) => `${nationName(a)}: ${l.detail}`).join("\n");
+  return `<span data-tip="${esc(levers || "No one holds a lever over them.")}">${parts.join(" · ") || "free"}</span>`;
+}
+function charts(keys) {
+  const labels = { share: "Share of world produce", per_head: "Produce per head", labour_share: "Labour's share", freedom: "Freedom" };
+  const met = S.nations.filter((n) => n.met && n.history && n.history.length > 1);
+  return `<div class="charts">${keys.map((k) => {
+    const all = met.flatMap((n) => n.history.map((h) => h[k]));
+    const max = Math.max(...all, 1e-9), last = Math.max(...met.map((n) => n.history.length));
+    const lines = met.map((n) => `<polyline fill="none" stroke="${n.colour}" stroke-width="${n.id === S.me.id ? 2.5 : 1.3}" points="${n.history.map((h, i) => `${(i / Math.max(last - 1, 1)) * 300},${100 - (h[k] / max) * 96}`).join(" ")}"><title>${esc(n.name)}</title></polyline>`).join("");
+    const mark = k === "share" ? `<line x1="0" x2="300" y1="${100 - (0.4 / max) * 96}" y2="${100 - (0.4 / max) * 96}" stroke="var(--warn)" stroke-dasharray="3 3"/>` : "";
+    return `<figure><figcaption class="small">${labels[k]}</figcaption><svg viewBox="0 0 300 100" width="300" height="100">${mark}${lines}</svg></figure>`;
+  }).join("")}</div><div class="small">${met.map((n) => `<span style="color:${n.colour}">■ ${esc(n.name)}</span>`).join(" ")}</div>`;
+}
+function screenReports() {
+  let h = `<h2>Reports</h2>${charts(["share", "per_head", "labour_share", "freedom"])}`;
+  h += `<h3>Levers and orbits</h3><p class="small muted">A people is in the orbit of whoever holds the strongest lever over it: supplying a quarter of one good or a sixth of all it consumes (trade), holding five turns of its revenue in debt (credit), or taking tribute, protecting it, or occupying a quarter of its towns (force). Its satellites' satellites count too.</p><table class="plain"><tr><th>People</th><th>In the orbit of</th><th>Levers held over them</th><th>Their sphere</th></tr>`;
+  for (const n of S.nations.filter((x) => x.met)) {
+    const levers = Object.entries(n.levers_on_them || {}).map(([a, l]) => `${esc(nationName(a))}: ${esc(l.detail)} (${l.kind}, ${l.strength}×)`).join("<br>") || "—";
+    h += `<tr><td style="color:${n.colour}">${esc(n.name)}</td><td>${n.orbit_of ? esc(nationName(n.orbit_of)) : "free"}</td><td class="small">${levers}</td><td>${(n.sphere || []).map((x) => esc(nationName(x))).join(", ") || "—"}</td></tr>`;
+  }
+  return h + `</table>`;
+}
+
 // --- the now column ---------------------------------------------------------------------------
 
 function renderNow() {
@@ -412,6 +466,15 @@ function renderNow() {
   $("end-turn").textContent = me.decisions.length ? "Answer the decision" : `End turn ${S.turn}`;
 }
 
+function showEnd() {
+  if (!S.winner || showEnd.shown) return;
+  showEnd.shown = true;
+  const w = S.winner;
+  const mine = w.nation === S.me.id;
+  const how = w.kind === "hegemony" ? "by hegemony" : "by opulence";
+  $("moment").innerHTML = `<div class="card" style="max-width:760px"><h2>${mine ? "Victory" : "The game is decided"} ${how}</h2><p class="serif">${esc(w.text)}</p>${charts(["share", "per_head"])}<p class="small muted">The curves are a record, not a score. You may keep playing.</p><button class="primary" onclick="$('moment').hidden=true">Keep playing</button> <button onclick="$('moment').hidden=true;openScreen('reports')">Reports</button></div>`;
+  $("moment").hidden = false;
+}
 function showMoments(prevTurn) {
   const fresh = S.log.filter((e) => e.turn === prevTurn && ["moment", "mode", "regression", "victory"].includes(e.kind));
   if (!fresh.length) return;
@@ -426,7 +489,7 @@ function openScreen(name) { screen = name; renderScreen(); }
 function closeScreen() { screen = null; $("screen").hidden = true; }
 function renderScreen() {
   if (!screen) return;
-  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, book: screenBook }[screen]();
+  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, reports: screenReports, book: screenBook }[screen]();
   $("screen-body").innerHTML = `<button class="close" onclick="closeScreen()">Close ✕</button>` + body;
   $("screen").hidden = false;
 }
@@ -488,7 +551,7 @@ function screenTreasury() {
   h += `</table><p class="muted small">Who hands over the money is not always who ends up poorer: an excise on necessaries raises what labour must be paid, and part of it comes back out of profit and rent.</p><h3>Spending</h3><table class="plain">`;
   const tips = { justice: "Security, labour's organisation, fewer riots, better tax collection.", instruction: "Offsets the dulling of divided labour; Ingenuity.", court: "Sway." };
   for (const line of ["justice", "instruction", "court"]) h += `<tr><td data-tip="${tips[line]}">${line}</td><td>${[0, 1, 2, 3].map((lv) => `<button class="${me.budget[line] === lv ? "on" : ""}" onclick="act({kind:'budget',line:'${line}',level:${lv}}).then(renderScreen)">${lv}</button>`).join(" ")}</td><td class="n">${fmt(me.breakdowns.treasury?.spent?.[line], 1)}</td></tr>`;
-  return h + `</table>`;
+  return h + `</table>` + creditSection(me);
 }
 
 function spark(hist, key, colour) {
@@ -498,7 +561,7 @@ function spark(hist, key, colour) {
   return `<svg width="200" height="42"><polyline fill="none" stroke="${colour}" stroke-width="1.5" points="${pts}"/></svg>`;
 }
 function screenNations() {
-  let h = `<h2>Peoples</h2><table class="plain"><tr><th>People</th><th>Age</th><th>Seat</th><th>Hands</th><th>Army</th><th>World share</th><th>Per head</th><th>Relations</th><th>Produce</th><th></th></tr>`;
+  let h = `<h2>Peoples</h2><table class="plain"><tr><th>People</th><th>Age</th><th>Seat</th><th>Hands</th><th>Army</th><th>World share</th><th>Per head</th><th>Relations</th><th>Orbit</th><th>Produce</th><th></th></tr>`;
   for (const n of S.nations) {
     if (!n.met) { h += `<tr><td class="muted">${esc(n.name)}</td><td colspan="9" class="muted">not yet met</td></tr>`; continue; }
     let btn = n.id === S.me.id ? "" : n.at_war ? "" : n.trading ? '<span class="up">bartering</span> ' : `<button ${n.barter ? "disabled" : ""} data-tip="${esc(n.barter || "Open a barter route: both markets widen, knowledge flows, relations improve.")}" onclick="act({kind:'barter',nation:'${n.id}'}).then(renderScreen)">Barter</button> `;
@@ -511,8 +574,8 @@ function screenNations() {
       btn += `<button ${n.declare ? "disabled" : ""} data-tip="${esc(n.declare || `Declare war on ${n.name} (${cost}). Trade with them stops; their army strength is ${n.strength}.`)}" onclick="if(confirm('Declare war on ${esc(n.name)}?'))act({kind:'declare_war',nation:'${n.id}'}).then(renderScreen)">Declare war</button>`;
       if (n.truce) btn += ` <span class="muted small">truce to turn ${n.truce}</span>`;
     }
-    if (n.id !== S.me.id) btn += diplomacyButtons(n);
-    h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${fmt(n.strength)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
+    if (n.id !== S.me.id) btn += diplomacyButtons(n) + borrowButton(n);
+    h += `<tr><td><b style="color:${n.colour}">${esc(n.name)}</b></td><td>${esc(n.mode)}</td><td>${SEAT[n.seat]}</td><td class="n">${fmt(n.hands)}</td><td class="n">${fmt(n.strength)}</td><td class="n">${pct(n.share)}</td><td class="n">${fmt(n.per_head, 2)}</td><td class="n">${n.id === S.me.id ? "" : fmt(n.relations, 0)}</td><td class="small">${orbitCell(n)}</td><td>${spark(n.history, "produce", n.colour)}</td><td>${btn}</td></tr>`;
   }
   h += `</table><h3>Your three curves</h3><p class="muted small">Produce per head · labour's share of produce · freedom. Not a score: a record.</p>`;
   h += `<div>${spark(S.me.history, "per_head", "var(--accent)")} ${spark(S.me.history, "labour_share", ORDER_COLOUR.labour)} ${spark(S.me.history, "freedom", "var(--up)")}</div>`;
@@ -557,7 +620,7 @@ async function endTurn() {
   $("end-turn").disabled = true;
   const s = await api("/turn", {});
   $("end-turn").disabled = false;
-  if (s) { update(s); showMoments(prev); }
+  if (s) { update(s); showMoments(prev); showEnd(); }
 }
 $("end-turn").addEventListener("click", endTurn);
 $("regent").addEventListener("click", async () => {
@@ -565,14 +628,14 @@ $("regent").addEventListener("click", async () => {
   $("regent").disabled = true;
   const s = await api("/regent", { turns: 10 });
   $("regent").disabled = false;
-  if (s) update(s);
+  if (s) { update(s); showEnd(); }
 });
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   if (e.key === "Enter" && !$("moment").hidden) { $("moment").hidden = true; return; }
   if (e.key === "Enter") endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
-  const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", b: "book" }[e.key.toLowerCase()];
+  const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
   if (k) (screen === k ? closeScreen() : openScreen(k));
   if (e.key === "Tab") {
     e.preventDefault();

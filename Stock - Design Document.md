@@ -727,7 +727,7 @@ Relations run from −100 to +100. They move with trade routes (+), shared enemi
 | Non-aggression | 5 Sway | Breaking it gives the victim a casus belli and relations −50 |
 | Trade Pact | 5 Sway | Tariffs waived between the two. Route capacity +25%. |
 | Alliance | 10 Sway | Defensive: when one is attacked, the other joins the war. Allies share vision. Peoples ally only against a common enemy. |
-| Protection | — | One side pays tribute and the other defends it. Creates a **force lever** (§17.2). |
+| Protection | 5 Sway | Offered by the stronger side: the protected people pay 5% of their produce each turn, and the protector joins any war against them. Creates a **force lever** (§17.2). The weak accept when threatened. |
 | Loan | — | One side lends Stock at interest. Creates a **credit lever**. |
 
 ### 16.2 AI
@@ -753,7 +753,7 @@ Relations run from −100 to +100. They move with trade routes (+), shared enemi
 
 **Hegemony** (dominance, and Smith's conflict strand) comes from the size of your economy plus an orbit of dependent nations.
 
-**Opulence** (per-head wealth, and Smith's harmony strand) is scored at turn 150. The winner is the nation with the highest **produce per head** among nations that are sovereign (in nobody's orbit) and have at least 25% of the average population.
+**Opulence** (per-head wealth, and Smith's harmony strand) is scored at turn 150. The winner is the nation with the highest **produce per head** among nations that are sovereign (in nobody's orbit) and have at least 25% of the average population. If every nation is in someone's orbit, the orbit condition is dropped.
 
 The tension from the old design is still here. A small, rich, free nation can win on opulence while a big empire chases hegemony. And a hegemon's orbit disqualifies its satellites from opulence.
 
@@ -767,7 +767,7 @@ Every turn, each nation's **levers** over each other nation are measured:
 | **Credit** | B owes A more than 5 turns of B's revenue |
 | **Force** | B pays A tribute or protection, *or* A occupies at least 25% of B's nodes |
 
-B is **in A's orbit** if A holds at least one lever over B. If several nations hold levers, B is in the orbit of the one with the strongest. Lever strength is how far past its threshold the lever is. The map's Orbit overlay draws these as lines. B sees its own dependence on a meter, with what it would take to break free: diversify imports, repay the debt, or win the war.
+B is **in A's orbit** if A holds at least one lever over B. If several nations hold levers, B is in the orbit of the one with the strongest. Lever strength is how far past its threshold the lever is. Orbits are never mutual: B cannot orbit A if B's lever over A is as strong. A nation's **sphere** is its orbit plus its satellites' satellites, and hegemony counts the sphere. The trade lever is a running average of dependence over several turns, so one turn's flows neither make nor break an orbit. The map's Orbit overlay draws these as lines. B sees its own dependence on a meter, with what it would take to break free: diversify imports, repay the debt, or win the war.
 
 ### 17.3 Hegemony
 

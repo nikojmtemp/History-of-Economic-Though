@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from stock.game import actions, ai, economy, military, politics, research, rules, trade, victory
+from stock.game import actions, ai, economy, finance, military, politics, research, rules, trade, victory
 from stock.game.state import Nation, World
 
 
@@ -41,9 +41,13 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
         n.last.update(figures)
         n.last["dependence"] = trade.dependence(world, n)
         n.last["food_dependence"] = trade.food_dependence(world, n)
+        victory.update_trade_levers(world, n)
 
-    # armies: upkeep, supply, sieges, the host's season, rebels, tribute
+    # armies: upkeep, supply, sieges, the host's season, rebels, tribute; then the debt is served
     military.tick(world)
+    for n in living:
+        if n.alive and n.debts:
+            finance.service(world, n)
 
     # 8. politics
     trade.update_contacts(world)
@@ -73,6 +77,7 @@ def end_turn(world: World, *, run_ai: bool = True) -> None:
         trade.update_fog(world, n)
     shares = victory.world_shares(world)
     for n in living:
+        n.last["share"] = shares.get(n.id, 0.0)
         hands = world.hands_of(n.id)
         produce = float(n.last.get("produce", 0.0))
         labour_income = float(n.last.get("split", {}).get("wages", 0.0))

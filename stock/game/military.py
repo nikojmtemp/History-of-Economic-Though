@@ -434,6 +434,7 @@ def capture(world: World, taker: str, nd: Node) -> None:
     nd.owner = taker
     nd.siege = None
     nd.conquered = 10
+    nd.taken_from = loser_id
     nd.unrest = max(nd.unrest, rules.CONQUEST_UNREST)
     if loser_id is not None:
         loser = world.nations[loser_id]
@@ -676,6 +677,7 @@ def tick(world: World) -> None:
         for nd in world.nodes_of(n.id):
             nd.conquered = max(0, nd.conquered - 1)
         _pay_tribute(world, n)
+        _pay_protection(world, n)
         if not world.nodes_of(n.id):
             n.exile_turns += 1
         else:
@@ -705,6 +707,24 @@ def _pay_tribute(world: World, n: Nation) -> None:
         if tr["turns"] <= 0:
             n.tributes.remove(tr)
             world.emit(n.id, "tribute", f"Our tribute to {to.name} is paid off.")
+
+
+def _pay_protection(world: World, n: Nation) -> None:
+    """A protected people pays its protector a share of its produce each turn."""
+
+    for t in world.treaties:
+        if t["kind"] != "protection" or t["b"] != n.id:
+            continue
+        to = world.nations[t["a"]]
+        amount = rules.PROTECTION_SHARE * float(n.last.get("produce", 0.0))
+        pool = "treasury" if n.seat == "civil" else "stock"
+        paid = min(amount, max(0.0, getattr(n, pool)))
+        setattr(n, pool, getattr(n, pool) - paid)
+        if to.seat == "civil":
+            to.treasury += paid
+        else:
+            to.stock += paid
+        t["paid"] = round(paid, 2)
 
 
 def _rebels(world: World, u: Unit) -> None:

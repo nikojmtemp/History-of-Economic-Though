@@ -29,6 +29,7 @@ class Node:
     siege: dict[str, Any] | None = None  # {"by": nation, "turns": left}
     revolt_turns: int = 0
     conquered: int = 0  # turns of conquest unrest left
+    taken_from: str | None = None  # the people this node was last taken from in war
 
     @property
     def t(self) -> rules.Terrain:
@@ -179,6 +180,8 @@ class Nation:
     truce: dict[str, int] = field(default_factory=dict)  # nation -> last turn of the truce
     embargo: dict[str, int] = field(default_factory=dict)  # nation -> last turn of our embargo on them
     trade: dict[str, Any] = field(default_factory=dict)  # this turn's imports, exports, profit, tolls
+    debts: list[dict[str, Any]] = field(default_factory=list)  # {"lender", "principal", "rate", "since"}
+    credit_closed: int = 0  # last turn on which no one will lend to us (after a default)
     # figures of the last resolved turn, for display, forecasts and victory
     last: dict[str, Any] = field(default_factory=dict)
     history: list[dict[str, float]] = field(default_factory=list)

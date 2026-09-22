@@ -270,6 +270,7 @@ def _blank() -> dict[str, Any]:
         "bounty": 0.0,
         "by_partner": {},  # partner -> value of goods bought from them
         "food_from": {},  # partner -> food bought from them
+        "from": {},  # partner -> good -> quantity bought from them (the trade lever)
         "value": 0.0,  # value of goods through our markets
     }
 
@@ -334,6 +335,8 @@ def resolve_flows(world: World) -> None:
             imp.trade["by_partner"][exp.id] = imp.trade["by_partner"].get(exp.id, 0.0) + q * hi
             if g == "food":
                 imp.trade["food_from"][exp.id] = imp.trade["food_from"].get(exp.id, 0.0) + q
+            bought = imp.trade["from"].setdefault(exp.id, {})
+            bought[g] = bought.get(g, 0.0) + q
             for x in (exp, imp):
                 x.trade["value"] += q * hi
             r.flows[g] = round(q if exp is a else -q, 3)
@@ -383,6 +386,13 @@ def treaty_blocker(world: World, n: Nation, other: Nation, kind: str) -> str | N
         return "at war: make peace first"
     if world.treaty(kind, n.id, other.id):
         return "already agreed"
+    if kind == "protection":
+        from stock.game.military import military_strength
+
+        if military_strength(world, other.id) >= military_strength(world, n.id):
+            return "they are as strong as we are: they need no protector"
+        if any(t["kind"] == "protection" and t["b"] == other.id for t in world.treaties):
+            return "they already have a protector"
     if n.sway < t.sway:
         return f"needs {t.sway:.0f} Sway"
     return None
@@ -399,6 +409,14 @@ def would_accept(world: World, n: Nation, other: Nation, kind: str) -> bool:
     if kind == "alliance":
         shared = set(_enemies(world, n.id)) & set(_enemies(world, other.id))
         return rel >= 0 and bool(shared)  # an alliance needs a common enemy
+    if kind == "protection":
+        from stock.game.military import military_strength
+
+        ours, theirs = military_strength(world, n.id), military_strength(world, other.id)
+        threatened = bool(_enemies(world, other.id)) or any(
+            other.relations.get(x, 0.0) < -20 and military_strength(world, x) > theirs for x in other.contacts
+        )
+        return ours >= 1.5 * theirs + 1.0 and rel >= -10 and (threatened or rel >= 30)
     return False
 
 
@@ -429,11 +447,15 @@ def break_treaties(world: World, breaker: Nation, victim: Nation) -> None:
 
 
 def allies_of(world: World, nation_id: str) -> list[str]:
-    return [
+    """Who comes to our aid: allies, and our protector (a protection treaty binds one way)."""
+
+    out = [
         t["b"] if t["a"] == nation_id else t["a"]
         for t in world.treaties
         if t["kind"] == "alliance" and nation_id in (t["a"], t["b"])
     ]
+    out += [t["a"] for t in world.treaties if t["kind"] == "protection" and t["b"] == nation_id]
+    return out
 
 
 def dependence(world: World, n: Nation) -> dict[str, float]:

@@ -125,3 +125,6 @@ table.plain td.n { text-align: right; }
 .route.mine { stroke-width: 3.5; opacity: 1; }
 .route.blocked { stroke: var(--down); stroke-dasharray: 2 4; }
 button.small { padding: 0 5px; font-size: 10px; }
+.charts { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; }
+.charts figure { margin: 0; }
+.charts svg { background: var(--paper-2); border: 1px solid var(--rule); }

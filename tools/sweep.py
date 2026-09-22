@@ -66,12 +66,12 @@ def main() -> None:
         ("a manufactory by turn 110", share(lambda r: r["manufactory"] and r["manufactory"] <= 110), 0.9),
         ("at least 1 war per 25 turns (6 a game)", share(lambda r: r["wars"] >= 6), 0.5),
     ]
-    pending = ["hegemony in 30-60% of games (needs orbits: trade flows, loans, tribute; M5-M6)"]
+    hegemony = share(lambda r: r["winner"] == "hegemony")
     print(f"{n} seeds in {time.time() - t0:.1f}s")
     for name, got, want in targets:
         print(f"{'PASS' if got >= want else 'MISS'}  {name}: {got:.0%} (target {want:.0%})")
-    for name in pending:
-        print(f"----  {name}")
+    ok = 0.3 <= hegemony <= 0.6
+    print(f"{'PASS' if ok else 'MISS'}  hegemony in 30-60% of games: {hegemony:.0%}")
     firsts = [r["first_left"] for r in rows if r["first_left"]]
     if firsts:
         print(f"median first leave: turn {statistics.median(firsts)}")  # type: ignore[type-var]

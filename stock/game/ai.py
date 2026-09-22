@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from stock.game import actions, economy, military, research, rules, trade
+from stock.game import actions, economy, finance, military, research, rules, trade
 from stock.game.state import Nation, Unit, World
 
 
@@ -474,6 +474,8 @@ def _diplomacy(world: World, n: Nation, style: str) -> None:
             military.military_strength(world, other_id) + rules.SETTLED_LEVY * world.hands_of(other_id) * 0.3
         )
         eager = {"khan": 1.3, "lord": 1.5, "merchant": 2.5}.get(style, 3.0)
+        if float(n.last.get("share", 0.0)) >= rules.AMBITION_SHARE:
+            eager *= 0.7  # a people within reach of hegemony takes more risks
         cause = other_id in n.casus_belli
         hungry = not _open_land(world, n)  # lords want land only when none is free
         motive = cause or (style == "khan") or hungry
@@ -642,6 +644,70 @@ def _treaties(world: World, n: Nation, style: str) -> None:
             _do(world, n, {"kind": "gift", "nation": o})
 
 
+# --- credit, ambition and the balance of power (§14.4, §17) ---------------------------------------
+
+
+def _credit(world: World, n: Nation) -> None:
+    if n.seat != "civil" or not n.knows("public_credit"):
+        return
+    owed = finance.debt(n)
+    at_war = bool(_enemies(world, n))
+    short = n.treasury < 5.0 and (at_war or n.counters.get("deficit", 0.0) > 0)
+    if short and owed < 2 * finance.loan_limit(n):
+        amount = round(finance.loan_limit(n) * 0.5, 1)
+        if n.stock >= 2 * amount:
+            _do(world, n, {"kind": "borrow", "source": finance.DOMESTIC, "amount": amount})
+            return
+        lenders = sorted(
+            (world.nations[o] for o in n.contacts if world.nations[o].alive and not world.nations[o].player),
+            key=lambda o: -o.stock,
+        )
+        for lender in lenders[:2]:
+            if _do(world, n, {"kind": "borrow", "source": lender.id, "amount": amount}):
+                return
+    elif owed > 0 and n.treasury > 40.0:
+        foreign = [d["lender"] for d in n.debts if d["lender"] != finance.DOMESTIC]
+        leader = world.hegemony.get("leader")
+        first = leader if leader in foreign else (foreign[0] if foreign else None)
+        _do(world, n, {"kind": "repay", "amount": n.treasury - 30.0, **({"lender": first} if first else {})})
+
+
+def _ambition(world: World, n: Nation) -> None:
+    """Within reach of hegemony: gather the weak under our protection (the force lever)."""
+
+    if float(n.last.get("share", 0.0)) < rules.AMBITION_SHARE or world.turn % 5 != 3:
+        return
+    for o in sorted(n.contacts, key=lambda x: military.military_strength(world, x)):
+        if _do(world, n, {"kind": "propose_treaty", "nation": o, "treaty": "protection"}):
+            return
+
+
+def _balance(world: World, n: Nation) -> None:
+    """Against an ascendant people: slip its orbit and, if we can, fight it (§17.4)."""
+
+    leader_id = world.hegemony.get("leader")
+    if not leader_id or leader_id == n.id or not world.nations[leader_id].alive:
+        return
+    if world.treaty("protection", leader_id, n.id):
+        _do(world, n, {"kind": "cancel_treaty", "nation": leader_id, "treaty": "protection"})
+    if finance.debt(n, leader_id) > 0 and n.treasury > 10:
+        _do(world, n, {"kind": "repay", "lender": leader_id, "amount": n.treasury - 5.0})
+    if military.at_war(world, n.id, leader_id) or leader_id not in n.contacts:
+        return
+    ours = military.military_strength(world, n.id) + sum(
+        military.military_strength(world, x) for x in trade.allies_of(world, n.id)
+    )
+    at_war_with_leader = [
+        o
+        for o in world.nations.values()
+        if o.alive and o.id != n.id and military.at_war(world, o.id, leader_id)
+    ]
+    ours += 0.5 * sum(military.military_strength(world, o.id) for o in at_war_with_leader)
+    theirs = military.military_strength(world, leader_id)
+    if ours >= 0.8 * theirs or (at_war_with_leader and ours >= 0.4 * theirs):
+        _do(world, n, {"kind": "declare_war", "nation": leader_id})
+
+
 def take_turn(world: World, n: Nation) -> None:
     style = personality(n)
     for d in list(n.decisions):
@@ -662,7 +728,10 @@ def take_turn(world: World, n: Nation) -> None:
         choice = "grant" if n.orders[order].clout > 0.4 or n.sway < 15 else "refuse"
         _do(world, n, {"kind": "decide", "id": d.id, "choice": choice})
     _research(world, n, style)
+    _balance(world, n)
     _diplomacy(world, n, style)
+    _credit(world, n)
+    _ambition(world, n)
     _raise(world, n)
     _armies(world, n)
     _raids(world, n, style)

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from stock.game import rules
 from stock.game.state import Nation, World
 
@@ -53,22 +55,121 @@ def world_shares(world: World) -> dict[str, float]:
     return {n.id: (float(n.last.get("produce", 0.0)) / total if total > 0 else 0.0) for n in living}
 
 
-def levers(world: World) -> dict[str, dict[str, str]]:
-    """For each nation B, {A: lever} for every nation A holding a lever over B.
+def levers(world: World) -> dict[str, dict[str, dict[str, Any]]]:
+    """For each living people B: {A: {"kind", "strength", "detail"}} for every people A
+    holding a lever over B (§17.2). Strength 1.0 is the threshold; only the strongest
+    of A's levers over B is kept."""
 
-    Trade dependence, credit and force levers need goods flows, loans and tribute
-    (M4–M6); until then nobody holds a lever and orbits are empty."""
+    from stock.game import finance  # finance imports economy; victory stays light
 
-    return {n.id: {} for n in world.nations.values()}
+    out: dict[str, dict[str, dict[str, Any]]] = {}
+    living = [n for n in world.nations.values() if n.alive]
+    for b in living:
+        held: dict[str, dict[str, Any]] = {}
+
+        def offer(
+            a: str,
+            kind: str,
+            strength: float,
+            detail: str,
+            held: dict[str, dict[str, Any]] = held,
+            b_id: str = b.id,
+        ) -> None:
+            _offer(world, held, b_id, a, kind, strength, detail)
+
+        # trade: a partner supplies a quarter of one good, or a sixth of all we consume (smoothed)
+        for a, (strength, detail) in b.last.get("trade_levers", {}).items():
+            offer(a, "trade", strength, detail)
+        # credit: they owe more than five turns of their revenue
+        for a, strength in finance.credit_levers(world, b).items():
+            offer(a, "credit", strength, f"holds {finance.debt(b, a):.0f} of their debt")
+        # force: tribute, protection, or towns held in a war still being fought
+        for tr in b.tributes:
+            offer(tr["to"], "force", rules.TRIBUTE_LEVER, f"takes tribute for {tr['turns']} more turns")
+        for t in world.treaties:
+            if t["kind"] == "protection" and t["b"] == b.id:
+                offer(t["a"], "force", rules.TRIBUTE_LEVER, "protects them, for 5% of their produce")
+        taken: dict[str, int] = {}
+        for nd in world.nodes.values():
+            if nd.taken_from == b.id and nd.owner and nd.owner != b.id and world.war_between(nd.owner, b.id):
+                taken[nd.owner] = taken.get(nd.owner, 0) + 1
+        home = len(world.nodes_of(b.id))
+        for a, count in taken.items():
+            share = count / max(home + count, 1)
+            offer(a, "force", share / rules.OCCUPATION_LEVER, f"occupies {count} of their towns")
+        out[b.id] = held
+    return out
 
 
-def orbits(world: World) -> dict[str, str]:
-    """B -> the nation whose orbit it is in."""
+def _offer(
+    world: World, held: dict[str, dict[str, Any]], b_id: str, a: str, kind: str, strength: float, detail: str
+) -> None:
+    """Keep A's strongest lever over B, if it reaches the threshold."""
 
+    if a == b_id or strength < 1.0 or not world.nations[a].alive:
+        return
+    if a not in held or strength > held[a]["strength"]:
+        held[a] = {"kind": kind, "strength": round(strength, 2), "detail": detail}
+
+
+def orbits(world: World, held: dict[str, dict[str, dict[str, Any]]] | None = None) -> dict[str, str]:
+    """B -> the people whose orbit it is in: the holder of the strongest lever over it."""
+
+    held = held if held is not None else levers(world)
     out: dict[str, str] = {}
-    for b, held in levers(world).items():
-        if held:
-            out[b] = sorted(held)[0]
+    for b, by in held.items():
+        # a people cannot be in the orbit of one it holds a stronger lever over (no mutual orbits)
+        pulls = {
+            a: x["strength"]
+            for a, x in by.items()
+            if x["strength"] > held.get(a, {}).get(b, {}).get("strength", 0.0)
+        }
+        if pulls:
+            out[b] = max(pulls, key=lambda a: pulls[a])
+    return out
+
+
+def update_trade_levers(world: World, b: Nation) -> None:
+    """This turn's trade dependence, folded into a running average so that a lever
+    reflects years of dependence rather than one turn's flows."""
+
+    eaten = b.last.get("consumed", {})
+    old = b.last.get("trade_levers", {})
+    raw: dict[str, tuple[float, str]] = {}
+    for a, goods in b.trade.get("from", {}).items():
+        total = float(b.last.get("dependence", {}).get(a, 0.0))
+        good, share = max(
+            ((g, q / float(eaten.get(g, 0.0))) for g, q in goods.items() if float(eaten.get(g, 0.0)) > 0),
+            key=lambda t: t[1],
+            default=("", 0.0),
+        )
+        by_good = share / rules.TRADE_LEVER_GOOD
+        by_total = total / rules.TRADE_LEVER_TOTAL
+        detail = (
+            f"supplies {share:.0%} of their {good}"
+            if by_good >= by_total
+            else f"supplies {total:.0%} of all they consume"
+        )
+        raw[a] = (max(by_good, by_total), detail)
+    new: dict[str, tuple[float, str]] = {}
+    for a in set(old) | set(raw):
+        s_old = old.get(a, (0.0, ""))[0]
+        s_new, detail = raw.get(a, (0.0, old.get(a, (0.0, ""))[1]))
+        smoothed = (1 - rules.LEVER_SMOOTHING) * s_old + rules.LEVER_SMOOTHING * s_new
+        if smoothed >= 0.05:
+            new[a] = (round(smoothed, 3), detail)
+    b.last["trade_levers"] = new
+
+
+def sphere(orb: dict[str, str], centre: str) -> list[str]:
+    """Everyone in `centre`'s orbit, directly or through its satellites."""
+
+    out: list[str] = []
+    frontier = [centre]
+    while frontier:
+        nxt = [b for b, a in orb.items() if a in frontier and b != centre and b not in out]
+        out += nxt
+        frontier = nxt
     return out
 
 
@@ -89,7 +190,7 @@ def check_victory(world: World) -> None:
     heg = world.hegemony
     candidate = None
     for n in living:
-        members = [b for b, a in orb.items() if a == n.id and world.nations[b].alive]
+        members = [b for b in sphere(orb, n.id) if world.nations[b].alive]
         others = len(living) - 1
         need = -(-others // 2)
         if (
@@ -101,6 +202,7 @@ def check_victory(world: World) -> None:
     if candidate is not None:
         if heg["leader"] != candidate:
             heg.update(leader=candidate, countdown=rules.HEGEMONY_COUNTDOWN, failing=0)
+            _coalition(world, world.nations[candidate])
             world.emit(
                 None,
                 "hegemony",
@@ -126,6 +228,8 @@ def check_victory(world: World) -> None:
         eligible = [
             n for n in living if n.id not in orb and world.hands_of(n.id) >= rules.OPULENCE_POP_FLOOR * avg
         ]
+        if not eligible:  # everyone is in someone's orbit: the richest of the large still wins
+            eligible = [n for n in living if world.hands_of(n.id) >= rules.OPULENCE_POP_FLOOR * avg]
         if eligible:
             best = max(eligible, key=lambda n: produce_per_head(world, n))
             world.winner = {
@@ -141,3 +245,33 @@ def check_elimination(world: World) -> None:
         if n.alive and world.hands_of(n.id) < 1.0:
             n.alive = False
             world.emit(None, "eliminated", f"{n.name} is no more.")
+
+
+def _coalition(world: World, leader: Nation) -> None:
+    """The balance of power (§17.4): the others gain a cause against the leader, and each other."""
+
+    others = [n for n in world.nations.values() if n.alive and n.id != leader.id]
+    for n in others:
+        n.casus_belli[leader.id] = rules.HEGEMONY_COUNTDOWN + 5
+        for m in others:
+            if m.id != n.id and m.id in n.contacts:
+                n.relations[m.id] = min(100.0, n.relations.get(m.id, 0.0) + rules.COALITION_RELATIONS)
+    world.emit(
+        None,
+        "coalition",
+        f"The other peoples draw together against {leader.name}: each has a just cause for war against them.",
+    )
+
+
+def summary(world: World) -> dict[str, Any]:
+    """Levers, orbits and the race, for the screen."""
+
+    held = levers(world)
+    orb = orbits(world, held)
+    shares = world_shares(world)
+    return {
+        "levers": held,
+        "orbits": orb,
+        "shares": shares,
+        "members": {a: sphere(orb, a) for a in shares},
+    }

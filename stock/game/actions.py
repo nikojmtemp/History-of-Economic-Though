@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stock.game import economy, military, politics, research, rules, trade
+from stock.game import economy, finance, military, politics, research, rules, trade
 from stock.game.state import Decision, Nation, Node, Unit, World
 
 Action = dict[str, Any]
@@ -130,6 +130,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         return "this nation is gone"
     if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
         return _check_war(world, n, a)
+    if kind in ("borrow", "repay", "default"):
+        return _check_credit(world, n, a)
     if kind in ("send_trader", "open_route", "embargo", "gift", "propose_treaty", "cancel_treaty"):
         return _check_trade(world, n, a)
     if kind in ("move", "split", "merge", "follow", "tame", "settle"):
@@ -359,6 +361,8 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
     kind = a["kind"]
     if kind in ("raise_unit", "declare_war", "offer_peace", "raid", "disband", "upgrade"):
         return _act_war(world, n, a)
+    if kind in ("borrow", "repay", "default"):
+        return _act_credit(world, n, a)
     if kind in ("send_trader", "open_route", "embargo", "gift", "propose_treaty", "cancel_treaty"):
         return _act_trade(world, n, a)
     if kind == "move":
@@ -513,6 +517,13 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
                 return "no such choice"
             n.decisions.remove(d)
             military.resolve_capture(world, n, d.data["node"], str(a["choice"]), d.data.get("from"))
+            return None
+        if d.kind == "loan":
+            n.decisions.remove(d)
+            borrower = world.nations[d.data["from"]]
+            amount = float(d.data["amount"])
+            if a.get("choice") == "accept" and n.stock >= amount and borrower.alive:
+                finance.lend(world, n, borrower, amount)
             return None
         if d.kind == "treaty":
             n.decisions.remove(d)
@@ -742,4 +753,40 @@ def _act_trade(world: World, n: Nation, a: Action) -> str | None:
             return "refused"
         n.sway -= rules.TREATIES[treaty].sway
         trade.sign(world, n, other, treaty)
+    return None
+
+
+# --- public credit (§14.4) --------------------------------------------------------------------------
+
+
+def _check_credit(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "borrow":
+        try:
+            amount = float(a.get("amount", 0.0))
+        except (TypeError, ValueError):
+            return "borrow a number"
+        return finance.borrow_blocker(world, n, str(a.get("source", finance.DOMESTIC)), amount)
+    if not n.debts:
+        return "we owe nothing"
+    if kind == "repay":
+        return None if n.treasury >= 1.0 else "the Treasury is empty"
+    return None  # default: always possible, never free
+
+
+def _act_credit(world: World, n: Nation, a: Action) -> str | None:
+    kind = a["kind"]
+    if kind == "borrow":
+        amount = float(a["amount"])
+        source = str(a.get("source", finance.DOMESTIC))
+        if source == finance.DOMESTIC:
+            finance.lend(world, None, n, amount)
+            return None
+        if not finance.request_foreign(world, n, world.nations[source], amount):
+            return None if world.nations[source].player else "refused"
+    elif kind == "repay":
+        lender = a.get("lender")
+        finance.repay(world, n, str(lender) if lender else None, float(a.get("amount", n.treasury)))
+    elif kind == "default":
+        finance.default(world, n)
     return None

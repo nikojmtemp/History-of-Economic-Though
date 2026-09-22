@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from stock.game import actions, economy, military, politics, research, rules, trade, victory
+from stock.game import actions, economy, finance, military, politics, research, rules, trade, victory
 from stock.game.state import Nation, Unit, World
 
 
@@ -264,18 +264,24 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
     vis = trade.visible(world, n)
     explored = set(n.explored) | vis
     shares = victory.world_shares(world)
+    heg = victory.summary(world)
+    need = -(-(len(heg["shares"]) - 1) // 2)
     L = n.last
     full = "made" in L  # a turn has resolved
     nations = []
     for o in world.nations.values():
         met = o.id == n.id or o.id in n.contacts
+        # an ascendant or victorious people is known to all (§17.3: the countdown is public)
+        famous = o.id in (world.hegemony.get("leader"), (world.winner or {}).get("nation"))
         entry: dict[str, Any] = {
             "id": o.id,
-            "name": o.name if met else "Unknown people",
+            "name": o.name if met or famous else "Unknown people",
             "colour": o.colour,
             "met": met,
             "alive": o.alive,
         }
+        if famous and not met:
+            entry["share"] = _r(shares.get(o.id, 0.0), 3)
         if met:
             entry.update(
                 mode=o.mode,
@@ -314,6 +320,13 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
                 embargoed=trade.embargoed(world, n.id, o.id) if o.id != n.id else False,
                 gift=None if o.id == n.id else actions.check(world, n, {"kind": "gift", "nation": o.id}),
                 depends_on_us=_r(o.last.get("dependence", {}).get(n.id, 0.0), 3) if o.id != n.id else 0.0,
+                orbit_of=heg["orbits"].get(o.id),
+                sphere=heg["members"].get(o.id, []),
+                levers_on_them=heg["levers"].get(o.id, {}),
+                debt=_r(finance.debt(o), 1),
+                lend=None
+                if o.id == n.id
+                else finance.borrow_blocker(world, n, o.id, round(finance.loan_limit(n) * 0.5, 1)),
             )
         nations.append(entry)
     edges = [{"a": e.a, "b": e.b, "kind": e.kind} for e in world.edges if e.a in explored and e.b in explored]
@@ -432,6 +445,22 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "war": military.summary(world, n),
             "defence": n.option("defence"),
             "war_cost": rules.WAR_COST,
+            "credit": {
+                "debts": n.debts,
+                "total": _r(finance.debt(n), 1),
+                "rate": _r(finance.interest_rate(n), 3),
+                "limit": _r(finance.loan_limit(n), 1),
+                "service": _r(n.last.get("debt_service", 0.0), 2),
+                "closed": n.credit_closed if n.credit_closed >= world.turn else 0,
+                "borrow_home": finance.borrow_blocker(
+                    world, n, finance.DOMESTIC, round(finance.loan_limit(n) * 0.5, 1)
+                ),
+                "repay": actions.check(world, n, {"kind": "repay"}),
+            },
+            "sphere": heg["members"].get(n.id, []),
+            "orbit_of": heg["orbits"].get(n.id),
+            "levers_on_us": heg["levers"].get(n.id, {}),
+            "sphere_need": need,
             "trade": {
                 "imports": {g: _r(q, 2) for g, q in n.trade.get("imports", {}).items()},
                 "exports": {g: _r(q, 2) for g, q in n.trade.get("exports", {}).items()},

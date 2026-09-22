@@ -1256,6 +1256,40 @@ TREATIES: dict[str, TreatyType] = {
             10.0,
             "If either is attacked, the other joins the war. Allies see what the other sees.",
         ),
+        TreatyType(
+            "protection",
+            "Protection",
+            "tribute",
+            5.0,
+            "We defend them if they are attacked; they pay us 5% of their produce each turn "
+            "and fall into our orbit.",
+        ),
     )
 }
 BREAK_FAITH_RELATIONS = 10.0  # every other people's relations with a treaty-breaker fall this much
+
+
+# --- public credit (§14.4) -----------------------------------------------------------------------
+
+LOAN_TURNS_OF_REVENUE = 5.0  # one loan is at most this many turns of revenue
+LOAN_FLOOR = 20.0  # ... or this much, when revenue is small
+INTEREST_BASE = 0.04  # per turn
+INTEREST_RISK = 0.06  # added per turn at a debt of ten turns' revenue
+DEFAULT_STOCK_CONTENTMENT = 40.0
+DEFAULT_RELATIONS = 50.0
+DEFAULT_SWAY = 15.0
+CREDIT_CLOSED_TURNS = 10
+FORCED_DEFAULT_TURNS = 15.0  # unpaid interest mounts; at this many turns' revenue the state defaults
+
+# --- orbits and hegemony (§17.2–17.4) -------------------------------------------------------------
+
+TRADE_LEVER_GOOD = 0.25  # a partner supplies this share of our consumption of one good
+TRADE_LEVER_TOTAL = 0.15  # ... or this share of all we consume
+LEVER_SMOOTHING = 0.25  # weight of this turn in the running average of trade dependence
+CREDIT_LEVER_TURNS = 5.0  # we owe a partner this many turns of our revenue
+CREDIT_LEVER_FLOOR = 20.0  # ... or this much, when our revenue is small
+OCCUPATION_LEVER = 0.25  # they hold this share of our towns, taken in a war still being fought
+TRIBUTE_LEVER = 1.5  # strength of a tribute or protection lever
+PROTECTION_SHARE = 0.05
+COALITION_RELATIONS = 20.0
+AMBITION_SHARE = 0.30  # a people with this share of world produce starts playing for hegemony
