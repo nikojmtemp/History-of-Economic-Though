@@ -477,11 +477,6 @@ function currentHint() {
   if (S.turn > 60) return null;
   if (!me.researching) return "Choose a discovery: click the line under this box, or press D. Taming and Tillage open the way out of the hunt.";
   if (band && node && node.game != null && node.game < 0.45 && !settled) return `The game at ${node.name} is thinning (${pct(node.game)} left). Select your band and click a ringed neighbour to move on.`;
-  if (band && node && !node.features.includes("wild_herds") && !known("taming") && me.mode === "hunting") {
-    const herds = nearestHerds(band.node);
-    if (herds) return `Wild herds graze at ${herds.name} (marked "wild herds" on the map). Take your band there and choose Follow the herds: three turns of it halves the cost of Taming.`;
-    return "No wild herds in sight. Explore: they graze on open grassland and hills.";
-  }
   if (band && node && node.features.includes("wild_herds") && !known("taming") && !band.followed) return "Wild herds graze here. Select your band and choose Follow the herds: three turns of it halves the cost of Taming.";
   if (band && node && node.features.includes("wild_herds") && known("taming")) return "You know Taming, and wild herds are here: select your band and choose Tame to become a horde.";
   if (band && known("tillage") && !settled) return "You know Tillage. Take a band to a river valley or coast and choose Settle: fields grow far more than the hunt.";
@@ -496,19 +491,6 @@ function renderHint() {
   const box = $("hint");
   box.hidden = !h;
   if (h) box.innerHTML = `<span>${esc(h)}</span> <button class="small" title="No more hints" onclick="hintsOff=true;try{localStorage.setItem('stock-hints','off')}catch(e){};renderHint()">✕</button>`;
-}
-
-function nearestHerds(from) {
-  const adj = {};
-  for (const e of S.edges) if (e.kind !== "sea") { (adj[e.a] ||= []).push(e.b); (adj[e.b] ||= []).push(e.a); }
-  const seen = new Set([from]);
-  let frontier = [from];
-  while (frontier.length) {
-    const hit = frontier.map((x) => S.nodes.find((n) => n.id === x)).find((n) => n && n.features.includes("wild_herds"));
-    if (hit) return hit;
-    frontier = frontier.flatMap((x) => adj[x] || []).filter((x) => !seen.has(x) && seen.add(x));
-  }
-  return null;
 }
 
 // armies are supplied within two steps of our towns, and riders on open grazing

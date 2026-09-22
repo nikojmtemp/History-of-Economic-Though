@@ -21,6 +21,7 @@ ENCLOSURE = 0.03
 SMUGGLING = 0.20
 COLONISTS = 0.10
 HERDS_MIGRATE = 0.02  # per world per turn
+HERDS_EARLIEST = 5  # wild herds may wander from this turn on
 PATENT_TURNS = 10
 PUBLISH_INGENUITY = 20.0
 SMUGGLING_TURNS = 5
@@ -60,7 +61,7 @@ def roll(world: World, n: Nation) -> None:
 
 
 def world_events(world: World) -> None:
-    if world.turn < 30 or world.rng.random() >= HERDS_MIGRATE:  # the opening's herds stay put
+    if world.turn < HERDS_EARLIEST or world.rng.random() >= HERDS_MIGRATE:
         return
     herds = [nd for nd in world.nodes.values() if "wild_herds" in nd.features]
     open_ground = [
