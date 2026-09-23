@@ -16,6 +16,7 @@
     <div id="resources"></div>
     <div id="hegemony"></div>
     <nav id="screens">
+      <button data-screen="settlements" title="Settlements and investment (S)">Settlements</button>
       <button data-screen="discoveries" title="Discoveries (D)">Discoveries</button>
       <button data-screen="institutions" title="Institutions (I)">Institutions</button>
       <button data-screen="treasury" title="Treasury (T)">Treasury</button>
@@ -31,6 +32,11 @@
   <aside id="society"></aside>
   <main id="board">
     <svg id="map" viewBox="-30 -30 1060 660" preserveAspectRatio="xMidYMid meet"></svg>
+    <div id="zoom">
+      <button id="zoom-in" title="Zoom in (+ or the mouse wheel)">+</button>
+      <button id="zoom-out" title="Zoom out (-)">−</button>
+      <button id="zoom-fit" title="Show everything we know (0)">⤢</button>
+    </div>
     <div id="overlays">
       <button data-overlay="political" class="on">Political</button>
       <button data-overlay="terrain">Terrain</button>

@@ -153,6 +153,7 @@ class Nation:
     demand: dict[str, float] = field(default_factory=dict)  # last turn's quantities
     known: list[str] = field(default_factory=lambda: list(rules.START_DISCOVERIES))
     researching: str | None = None
+    research_queue: list[str] = field(default_factory=list)  # next discoveries, in order
     research_progress: float = 0.0
     institutions: dict[str, str] = field(default_factory=lambda: dict(rules.START_INSTITUTIONS))
     pending_institutions: dict[str, str] = field(default_factory=dict)

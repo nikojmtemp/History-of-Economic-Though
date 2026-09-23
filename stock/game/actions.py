@@ -259,6 +259,24 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         if not research.available(n, key):
             return "prerequisites not met"
         return None
+    if kind == "queue_research":
+        key = str(a.get("key", ""))
+        if key not in rules.DISCOVERIES:
+            return "no such discovery"
+        if key in n.known:
+            return "already known"
+        if key == n.researching or key in n.research_queue:
+            return "already planned"
+        return None
+    if kind == "unqueue_research":
+        if str(a.get("key", "")) not in n.research_queue:
+            return "not in the queue"
+        return None
+    if kind == "reorder_queue":
+        at, dest = a.get("index"), a.get("to")
+        if not all(isinstance(x, int) and 0 <= x < len(n.build_queue) for x in (at, dest)):
+            return "no such queue item"
+        return None
     if kind == "build":
         return build_blocker(world, n, a.get("node"), str(a.get("work", "")))
     if kind == "demolish":
@@ -480,7 +498,19 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
             n.orders[order].contentment = economy.clamp(n.orders[order].contentment + 5.0, 0.0, 100.0)
         n.feast_ready = rules.FEAST_COOLDOWN
     elif kind == "research":
-        n.researching = str(a["key"])
+        key = str(a["key"])
+        if n.researching is not None and n.researching != key:
+            n.research_queue.insert(0, n.researching)  # set aside, not forgotten
+        n.researching = key
+        research.next_from_queue(n)
+    elif kind == "queue_research":
+        n.research_queue.extend(research.path_to(n, str(a["key"])))
+        research.next_from_queue(n)
+    elif kind == "unqueue_research":
+        n.research_queue.remove(str(a["key"]))
+    elif kind == "reorder_queue":
+        item = n.build_queue.pop(int(a["index"]))
+        n.build_queue.insert(int(a["to"]), item)
     elif kind == "build":
         work = str(a["work"])
         if rules.WORKS[work].public:

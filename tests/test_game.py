@@ -278,3 +278,42 @@ def test_a_feast_spikes_growth_and_costs_more_with_more_people() -> None:
     assert first == pytest.approx(rules.FEAST_FOOD_PER_HAND * w.hands_of(me))
     turn.end_turn(w, run_ai=False)
     assert w.hands_of(me) > base.hands_of(me) * 1.04
+
+
+def test_queueing_a_distant_discovery_plans_the_road_to_it() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    n = w.nations[me]
+    assert actions.act(w, me, {"kind": "queue_research", "key": "land_tenure"}) is None
+    plan = [n.researching, *n.research_queue]
+    assert plan[-1] == "land_tenure"
+    for i, k in enumerate(plan):  # every step's requirements come before it
+        for group in rules.DISCOVERIES[k].requires:
+            assert any(r in n.known or r in plan[:i] for r in group)
+    n.research_progress = 1000.0
+    for _ in range(4):
+        turn.end_turn(w, run_ai=False)
+    assert "land_tenure" in n.known and not n.research_queue
+
+
+def test_choosing_a_discovery_sets_the_current_one_aside() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    n = w.nations[me]
+    assert actions.act(w, me, {"kind": "research", "key": "taming"}) is None
+    assert actions.act(w, me, {"kind": "queue_research", "key": "barter"}) is None
+    assert n.researching == "taming" and n.research_queue == ["barter"]
+    assert actions.act(w, me, {"kind": "research", "key": "barter"}) is None
+    assert n.researching == "barter" and n.research_queue == ["taming"]
+    assert actions.act(w, me, {"kind": "unqueue_research", "key": "taming"}) is None
+    assert n.research_queue == []
+
+
+def test_the_investment_queue_can_be_reordered() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    n = w.nations[me]
+    n.build_queue = [{"node": "a", "work": "fields"}, {"node": "b", "work": "pasture"}]
+    assert actions.act(w, me, {"kind": "reorder_queue", "index": 1, "to": 0}) is None
+    assert [q["node"] for q in n.build_queue] == ["b", "a"]
+    assert actions.act(w, me, {"kind": "reorder_queue", "index": 2, "to": 0}) == "no such queue item"

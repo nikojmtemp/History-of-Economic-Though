@@ -61,6 +61,38 @@ def available(n: Nation, key: str) -> bool:
     return all(any(req in n.known for req in group) for group in d.requires)
 
 
+def path_to(n: Nation, key: str) -> list[str]:
+    """The discoveries still wanting before `key`, prerequisites first, then `key` itself.
+    Of an either-or requirement, one already known or planned will do, else the earliest."""
+
+    planned = set(n.known) | set(n.research_queue) | ({n.researching} if n.researching else set())
+    out: list[str] = []
+
+    def visit(k: str) -> None:
+        if k in planned or k in out:
+            return
+        for group in rules.DISCOVERIES[k].requires:
+            if not any(r in planned or r in out for r in group):
+                visit(min(group, key=lambda r: rules.DISCOVERIES[r].era))
+        out.append(k)
+
+    visit(key)
+    return out
+
+
+def next_from_queue(n: Nation) -> None:
+    """With nothing under study, take up the first queued discovery we can study now."""
+
+    n.research_queue = [k for k in n.research_queue if k not in n.known and k != n.researching]
+    if n.researching is not None:
+        return
+    for k in n.research_queue:
+        if available(n, k):
+            n.research_queue.remove(k)
+            n.researching = k
+            return
+
+
 def observation_met(n: Nation, key: str, m: dict[str, float]) -> bool:
     obs = rules.DISCOVERIES[key].observation
     return obs is not None and m.get(obs[0], 0.0) >= obs[1]
@@ -109,9 +141,11 @@ def advance(world: World, n: Nation) -> None:
     n.research_progress += sum(ingenuity(world, n).values())
     m = metrics(world, n)
     for _ in range(3):  # at most a few discoveries a turn
-        key = n.researching
-        if key is None or not available(n, key):
+        if n.researching is not None and not available(n, n.researching):
             n.researching = None
+        next_from_queue(n)
+        key = n.researching
+        if key is None:
             return
         c = cost(world, n, key, m)
         if n.research_progress < c:

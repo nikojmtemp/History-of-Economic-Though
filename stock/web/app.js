@@ -237,9 +237,65 @@ function fitMap() {
   const minW = 420, minH = 260;
   if (x1 - x0 < minW) { const c = (x0 + x1) / 2; x0 = c - minW / 2; x1 = c + minW / 2; }
   if (y1 - y0 < minH) { const c = (y0 + y1) / 2; y0 = c - minH / 2; y1 = c + minH / 2; }
-  $("map").setAttribute("viewBox", `${x0} ${y0} ${x1 - x0} ${y1 - y0}`);
+  fitBox = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  const v = view || fitBox;
+  $("map").setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
 }
 
+// zoom and pan: the wheel zooms about the pointer, dragging pans, ⤢ goes back to the whole map
+let view = null, fitBox = null;
+function setView(v) {
+  const minW = fitBox.w / 8, maxW = fitBox.w * 1.5;
+  const k = Math.min(Math.max(v.w, minW), maxW) / v.w;
+  const cx = v.x + v.w / 2, cy = v.y + v.h / 2;
+  view = { w: v.w * k, h: v.h * k, x: cx - (v.w * k) / 2, y: cy - (v.h * k) / 2 };
+  $("map").setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+}
+function zoomBy(f, px, py) {
+  const v = view || fitBox;
+  if (px == null) { px = v.x + v.w / 2; py = v.y + v.h / 2; }
+  setView({ x: px - (px - v.x) * f, y: py - (py - v.y) * f, w: v.w * f, h: v.h * f });
+}
+function zoomTo(x, y, k) {
+  const w = fitBox.w / k, h = fitBox.h / k;
+  setView({ x: x - w / 2, y: y - h / 2, w, h });
+}
+function svgPoint(e) {
+  const p = new DOMPoint(e.clientX, e.clientY).matrixTransform($("map").getScreenCTM().inverse());
+  return [p.x, p.y];
+}
+$("map").addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const [x, y] = svgPoint(e);
+  zoomBy(e.deltaY > 0 ? 1.15 : 1 / 1.15, x, y);
+}, { passive: false });
+let drag = null;
+$("map").addEventListener("pointerdown", (e) => { if (e.button === 0) drag = { x: e.clientX, y: e.clientY, moved: false, v: { ...(view || fitBox) } }; });
+window.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+  drag.moved = true;
+  $("map").classList.add("panning");
+  const ctm = $("map").getScreenCTM();
+  view = { ...drag.v, x: drag.v.x - dx / ctm.a, y: drag.v.y - dy / ctm.d };
+  $("map").setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+});
+window.addEventListener("pointerup", () => {
+  if (drag && drag.moved) {  // a drag is not a click
+    $("map").addEventListener("click", (e) => e.stopImmediatePropagation(), { capture: true, once: true });
+  }
+  drag = null;
+  $("map").classList.remove("panning");
+});
+$("zoom-in").addEventListener("click", () => zoomBy(1 / 1.4));
+$("zoom-out").addEventListener("click", () => zoomBy(1.4));
+$("zoom-fit").addEventListener("click", () => { view = null; fitMap(); });
+
+function groundText(n) {  // "River valley", not "River valley · river"
+  const t = n.terrain_name.toLowerCase();
+  return n.terrain_name + (n.river && !t.includes("river") ? " · river" : "") + (n.coast && !t.includes("coast") ? " · coast" : "");
+}
 function nodeTip(n) {
   const lines = [`${n.name} — ${n.terrain_name}${n.river ? ", on a river" : ""}${n.coast ? ", coast" : ""}`];
   const y = n.yields;
@@ -310,7 +366,7 @@ function renderSelection() {
   }
   const n = nodeById()[sel.id];
   if (!n) { sel = null; return renderSelection(); }
-  let h = `<h2>${esc(n.name)} <span class="muted small">${n.terrain_name}${n.river ? " · river" : ""}${n.coast ? " · coast" : ""}</span></h2>`;
+  let h = `<h2>${esc(n.name)} <span class="muted small">${groundText(n)}</span></h2>`;
   h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
   if (n.owner === S.me.id) {
     h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)} <button class="small" data-tip="Pull it down to free the slot. Nothing is refunded." onclick="if(confirm('Pull down this ${esc(S.works.find((x) => x.key === w)?.name || w)}?'))act({kind:'demolish',node:'${n.id}',work:'${w}'})">✕</button></span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
@@ -326,20 +382,9 @@ function renderSelection() {
       h += `<button ${o.why ? "disabled" : ""} data-tip="${esc(raiseTip(o.kind, o.why))}" onclick="act({kind:'raise_unit',node:'${n.id}',unit_kind:'${o.kind}'})">Raise ${esc(o.name)}</button>`;
     }
     h += `</div>`;
-    h += `<div class="build">`;
-    for (const b of n.buildable) {
-      if (b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")) continue;
-      const ret = b.return != null ? `<span class="ret ${b.return >= (S.me.breakdowns.stock?.rate_of_profit || 0.12) ? "up" : "down"}">${pct(b.return)}</span>` : "";
-      const w = S.works.find((x) => x.key === b.key);
-      const tip = `${w.description}\nCost ${b.cost} ${b.public ? "Treasury" : "Stock"}.${b.return != null ? `\nExpected return ${pct(b.return)} against a rate of profit of ${pct(S.me.breakdowns.stock?.rate_of_profit)}: below it, investors want a bounty.` : ""}${b.why ? `\nNot now: ${b.why}` : ""}`;
-      h += `<button ${b.why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'build',node:'${n.id}',work:'${b.key}'})">${esc(b.name)} · ${b.cost}${b.public ? "T" : ""} ${ret}</button>`;
-    }
-    h += `</div>`;
+    h += `<div class="build">${investButtons(n)}</div>`;
   }
-  const q = S.me.build_queue;
-  if (q.length) {
-    h += `<h3>Investment queue</h3>` + q.map((it, i) => `<div class="small">${i + 1}. ${esc(S.works.find((x) => x.key === it.work)?.name)} at ${esc(nodeById()[it.node]?.name)} — <span class="muted">${esc(it.status)}</span> <button onclick="act({kind:'unqueue',index:${i}})">✕</button></div>`).join("");
-  }
+  if (S.me.build_queue.length) h += `<h3>Investment queue <button class="small" onclick="openScreen('settlements')">all settlements ▸</button></h3>` + queueList();
   box.innerHTML = h;
 }
 
@@ -518,7 +563,7 @@ function renderNow() {
   $("decisions").innerHTML = me.decisions.map((d) => `<div class="decision"><b class="serif">${esc(d.title)}</b><div class="small">${esc(d.text)}</div>${d.choices.map((c) => `<button data-tip="${esc(c.effect)}" onclick="act({kind:'decide',id:'${d.id}',choice:'${c.key}'})">${esc(c.label)}</button>`).join("")}</div>`).join("");
   const cur = me.researching ? S.discoveries.find((d) => d.key === me.researching) : null;
   $("research-now").innerHTML = cur
-    ? `Researching <b>${esc(cur.name)}</b>: ${fmt(me.research_progress)} / ${fmt(me.research_cost)} (+${fmt(me.ingenuity)}/turn)`
+    ? `Researching <b>${esc(cur.name)}</b>: ${fmt(me.research_progress)} / ${fmt(me.research_cost)} (+${fmt(me.ingenuity)}/turn)${me.research_queue.length ? `<div class="small muted">then ${me.research_queue.slice(0, 3).map((k) => esc(S.discoveries.find((x) => x.key === k).name)).join(", ")}${me.research_queue.length > 3 ? ` +${me.research_queue.length - 3}` : ""}</div>` : ""}`
     : `<span class="warn">Choose a discovery ▸</span> <span class="muted">(${fmt(me.research_progress)} ingenuity banked)</span>`;
   $("log").innerHTML = S.log.slice().reverse().map((e) => `<div class="ev ${e.kind}"><div class="t">Turn ${e.turn}</div>${esc(e.text)}${e.quote ? `<q>${esc(e.quote)}</q>` : ""}</div>`).join("");
   $("end-turn").disabled = !!S.winner && false;
@@ -560,24 +605,33 @@ function openScreen(name) { screen = name; renderScreen(); }
 function closeScreen() { screen = null; $("screen").hidden = true; }
 function renderScreen() {
   if (!screen) return;
-  const body = { discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, reports: screenReports, book: screenBook }[screen]();
-  $("screen-body").innerHTML = `<button class="close" onclick="closeScreen()">Close ✕</button>` + body;
+  const body = { settlements: screenSettlements, discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, reports: screenReports, book: screenBook }[screen]();
+  $("screen-body").innerHTML = `<div class="screen-bar"><button class="close" onclick="closeScreen()" title="Close (Escape)">Close ✕</button></div>` + body;
   $("screen").hidden = false;
 }
 
 function screenDiscoveries() {
   const lanes = ["subsistence", "exchange", "force", "order"];
   const eras = ["Hunting", "Pasturage", "Agriculture", "Commerce"];
-  let h = `<h2>Discoveries</h2><p class="muted">Ingenuity ${fmt(S.me.ingenuity)} a turn. Meeting a discovery's observation halves its cost; peoples you know who have it already make it cheaper still.</p><div class="web"><div></div>${eras.map((e) => `<div class="era">${e}</div>`).join("")}`;
+  const q = S.me.research_queue;
+  let h = `<h2>Discoveries</h2><p class="muted">Ingenuity ${fmt(S.me.ingenuity)} a turn. Meeting a discovery's observation halves its cost; peoples you know who have it already make it cheaper still.<br>Click a discovery to study it, or to queue it (with whatever it needs first) if we are studying something already. Shift-click one we can study to take it up now. Click a queued one to drop it.</p>`;
+  const cur = S.me.researching ? S.discoveries.find((x) => x.key === S.me.researching) : null;
+  h += `<div class="rq"><b>Studying:</b> ${cur ? esc(cur.name) : '<span class="warn">nothing</span>'}${q.length ? " · <b>then</b>" : ""}${q.map((k, i) => `<span class="item">${i + 1}. ${esc(S.discoveries.find((x) => x.key === k).name)} <button class="small" title="Drop" onclick="act({kind:'unqueue_research',key:'${k}'}).then(renderScreen)">✕</button></span>`).join("")}</div>`;
+  h += `<div class="web"><div></div>${eras.map((e) => `<div class="era">${e}</div>`).join("")}`;
   for (const lane of lanes) {
     h += `<div class="lane">${lane[0].toUpperCase() + lane.slice(1)}</div>`;
     for (let era = 1; era <= 4; era++) {
       h += `<div class="cell">`;
       for (const d of S.discoveries.filter((x) => x.lane === lane && x.era === era)) {
         const req = d.requires.map((g) => g.map((k) => S.discoveries.find((x) => x.key === k).name).join(" or ")).join(", and ");
-        const tip = `${d.unlocks}${req ? `\nNeeds: ${req}` : ""}${d.quote ? `\n\n“${d.quote}”` : ""}`;
-        h += `<div class="disc ${d.state} ${S.me.researching === d.key ? "current" : ""}" data-tip="${esc(tip)}" ${d.state === "available" ? `onclick="act({kind:'research',key:'${d.key}'}).then(renderScreen)"` : ""}>
-          <div class="name">${esc(d.name)}</div><div class="small">${esc(d.unlocks)}</div>
+        const qi = q.indexOf(d.key);
+        const current = S.me.researching === d.key;
+        const how = d.state === "known" || current ? "" : qi >= 0 ? "Click to drop it from the queue."
+          : d.state === "available" && !S.me.researching ? "Click to study it." : "Click to queue it" + (d.state === "locked" ? " with what it needs." : "; shift-click to study it now.");
+        const tip = `${d.unlocks}${req ? `\nNeeds: ${req}` : ""}${d.quote ? `\n\n“${d.quote}”` : ""}${how ? `\n\n${how}` : ""}`;
+        const badge = current ? `<span class="badge">studying</span>` : qi >= 0 ? `<span class="badge">${qi + 1}</span>` : "";
+        h += `<div class="disc ${d.state} ${current ? "current" : ""} ${qi >= 0 ? "queued" : ""}" data-tip="${esc(tip)}" ${how ? `onclick="discClick('${d.key}', event)"` : ""}>
+          ${badge}<div class="name">${esc(d.name)}</div><div class="small">${esc(d.unlocks)}</div>
           ${d.state !== "known" ? `<div class="small">Cost ${fmt(d.cost)}${d.diffusion ? ` <span class="up">(−${pct(d.diffusion)} known by ${esc(d.known_by.join(", "))})</span>` : ""}</div>` : ""}
           ${d.observation && d.state !== "known" ? `<div class="small obs ${d.observed ? "met" : ""}">${d.observed ? "✓" : `${pct(d.progress)} ·`} ${esc(d.observation)}</div>` : ""}</div>`;
       }
@@ -585,6 +639,78 @@ function screenDiscoveries() {
     }
   }
   return h + `</div>`;
+}
+
+function discClick(key, e) {
+  const d = S.discoveries.find((x) => x.key === key);
+  let a;
+  if (S.me.research_queue.includes(key)) a = { kind: "unqueue_research", key };
+  else if (d.state === "available" && (!S.me.researching || e.shiftKey)) a = { kind: "research", key };
+  else a = { kind: "queue_research", key };
+  act(a).then(renderScreen);
+}
+
+// --- settlements: every town, what it could build, and the investment queue ---------------------
+
+function focusNode(id) {
+  sel = { type: "node", id };
+  closeScreen();
+  const n = nodeById()[id];
+  if (n) zoomTo(n.x, n.y, 2);
+  renderAll();
+}
+function investButtons(n) {
+  const shown = (n.buildable || []).filter((b) => !(b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")));
+  const full = shown.find((b) => b.why && b.why.startsWith("no free slot"));
+  if (full && shown.every((b) => b.why && b.why.startsWith("no free slot"))) {
+    return `<span class="muted small">Every slot is taken (${esc(full.why.replace("no free slot ", "").replace(/[()]/g, ""))}). More hands open more slots, or pull down a work.</span>`;
+  }
+  let h = "";
+  for (const b of shown) {
+    const ret = b.return != null ? `<span class="ret ${b.return >= (S.me.breakdowns.stock?.rate_of_profit || 0.12) ? "up" : "down"}">${pct(b.return)}</span>` : "";
+    const w = S.works.find((x) => x.key === b.key);
+    const tip = `${w.description}\nCost ${b.cost} ${b.public ? "Treasury" : "Stock"}.${b.return != null ? `\nExpected return ${pct(b.return)} against a rate of profit of ${pct(S.me.breakdowns.stock?.rate_of_profit)}: below it, investors want a bounty.` : ""}${b.why ? `\nNot now: ${b.why}` : ""}`;
+    h += `<button ${b.why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'build',node:'${n.id}',work:'${b.key}'})${screen ? ".then(renderScreen)" : ""}">${esc(b.name)} · ${b.cost}${b.public ? "T" : ""} ${ret}</button>`;
+  }
+  return h;
+}
+function queueList() {
+  const q = S.me.build_queue;
+  if (!q.length) return `<p class="muted small">Nothing queued. Queue a work below: Stock builds it when there is enough, in queue order.</p>`;
+  const again = screen ? ".then(renderScreen)" : "";
+  return `<table class="plain">` + q.map((it, i) => `<tr><td>${i + 1}.</td><td><b>${esc(S.works.find((x) => x.key === it.work)?.name)}</b> at <span class="place" onclick="focusNode('${it.node}')">${esc(nodeById()[it.node]?.name)}</span></td><td class="muted small">${esc(it.status)}</td><td>
+    <button class="small" ${i ? "" : "disabled"} title="Earlier" onclick="act({kind:'reorder_queue',index:${i},to:${i - 1}})${again}">▲</button>
+    <button class="small" ${i < q.length - 1 ? "" : "disabled"} title="Later" onclick="act({kind:'reorder_queue',index:${i},to:${i + 1}})${again}">▼</button>
+    <button class="small" title="Drop" onclick="act({kind:'unqueue',index:${i}})${again}">✕</button></td></tr>`).join("") + `</table>`;
+}
+function screenSettlements() {
+  const me = S.me;
+  const mine = S.nodes.filter((n) => n.owner === me.id).sort((a, b) => b.hands - a.hands);
+  let h = `<h2>Settlements</h2><p class="muted">Stock ${fmt(me.stock)} (${sgn(me.stock_income)} a turn) · rate of profit ${pct(me.breakdowns.stock?.rate_of_profit)}${me.seat === "civil" ? ` · Treasury ${fmt(me.treasury)}` : ""}. Green returns beat the rate of profit and private Stock builds them; red ones need a bounty from the Treasury. Works marked T are paid by the Treasury at once.</p>`;
+  h += `<h3>Investment queue</h3>` + queueList();
+  h += `<h3>Our settlements</h3>`;
+  if (!mine.length) h += `<p class="muted">We have no settlement yet: settle a band first.</p>`;
+  else {
+    h += `<table class="plain lands"><tr><th>Place</th><th>Hands</th><th>Produce</th><th>Works</th><th>Unrest</th><th>Invest</th></tr>`;
+    for (const n of mine) {
+      const works = (n.works || []).map((w) => esc(S.works.find((x) => x.key === w)?.name || w)).join(", ") || '<span class="muted">none</span>';
+      h += `<tr><td><a onclick="focusNode('${n.id}')">${esc(n.name)}</a><div class="small muted">${groundText(n)}${n.features.length ? " · " + n.features.map((f) => FEATURE[f]).join(", ") : ""}</div>${n.siege ? `<div class="small warn">besieged</div>` : ""}</td>
+        <td class="n">${fmt(n.hands)}<div class="small muted">${n.jobs} jobs</div></td><td class="n">${fmt(n.produce)}</td>
+        <td>${works}<div class="small muted">${n.works.length}/${n.slots} slots</div></td><td class="n ${n.unrest > 70 ? "down" : n.unrest > 40 ? "warn" : ""}">${n.unrest}</td>
+        <td><div class="build">${investButtons(n)}</div></td></tr>`;
+    }
+    h += `</table>`;
+  }
+  const others = S.nodes.filter((n) => n.owner !== me.id && (n.visible || n.owner || n.features.length))
+    .sort((a, b) => (a.owner || "~").localeCompare(b.owner || "~") || a.name.localeCompare(b.name));
+  h += `<h3>Other places we know</h3><table class="plain"><tr><th>Place</th><th>Ground</th><th>Held by</th><th>Hands</th><th>Has</th></tr>`;
+  for (const n of others) {
+    const owner = n.owner ? S.nations.find((x) => x.id === n.owner) : null;
+    h += `<tr><td><a class="place" onclick="focusNode('${n.id}')">${esc(n.name)}</a>${n.visible ? "" : ' <span class="muted small">(last seen)</span>'}</td><td class="small">${groundText(n)}</td>
+      <td>${owner ? `<span style="color:${owner.colour}">${esc(owner.name)}</span>${n.enemy ? ' <span class="down small">enemy</span>' : ""}` : '<span class="muted">open ground</span>'}</td>
+      <td class="n">${n.owner && n.hands != null ? fmt(n.hands) : ""}</td><td class="small">${n.features.map((f) => FEATURE[f]).join(", ")}</td></tr>`;
+  }
+  return h + `</table>`;
 }
 
 async function forecastOption(pillar, option, el) {
@@ -670,7 +796,7 @@ function screenBook() {
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
-    ["Keys", "Space or Enter ends the turn. Tab selects your next unit. D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+    ["Keys", "Space or Enter ends the turn. Tab selects your next unit. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
   );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
@@ -691,7 +817,7 @@ $("new-world").addEventListener("click", async () => {
   const spec = prompt("World: random, or random:SEED:NODES:NATIONS", "random");
   if (spec == null) return;
   const s = await api("/new", { spec });
-  if (s) { sel = null; update(s); }
+  if (s) { sel = null; view = null; update(s); }
 });
 async function endTurn() {
   if (S.me.decisions.length) { toast("Answer the waiting decision first."); return; }
@@ -730,7 +856,10 @@ document.addEventListener("keydown", (e) => {
   if (endKey) endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
   if (e.key === "?") { screen = "book"; renderScreen(); }
-  const k = { d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
+  if (!screen && (e.key === "+" || e.key === "=")) zoomBy(1 / 1.4);
+  if (!screen && (e.key === "-" || e.key === "_")) zoomBy(1.4);
+  if (!screen && e.key === "0") { view = null; fitMap(); }
+  const k = { s: "settlements", d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
   if (k) (screen === k ? closeScreen() : openScreen(k));
   if (e.key === "Tab") {
     e.preventDefault();

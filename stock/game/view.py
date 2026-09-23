@@ -406,6 +406,7 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "food_income": _r(L["made"]["food"] - L["consumed"]["food"], 1) if full else 0.0,
             "ingenuity": _r(sum(L.get("ingenuity", {}).values()), 1),
             "researching": n.researching,
+            "research_queue": n.research_queue,
             "research_progress": _r(n.research_progress, 1),
             "research_cost": research.cost(world, n, n.researching) if n.researching else None,
             "extent": _r(L.get("extent", 0.0), 1),

@@ -885,7 +885,8 @@ Every policy action (institution change, tax rate, budget level, trade policy, a
 
 ### 19.6 Screens
 
-- **Discoveries**: §12.5.
+- **Settlements** (S): every settlement we hold, with its hands, produce, works and slots, unrest, and the works it could build with their expected return against the rate of profit; the whole **investment queue**, which the player can reorder and trim; and every other place we know, with who holds it. Clicking a place selects it and zooms the map to it.
+- **Discoveries**: §12.5. Discoveries can be **queued**. Clicking a discovery when something is already under study, or one still locked, queues it together with whatever it needs first (of an either-or requirement, one already known or planned will do, else the earliest). When a discovery completes, study moves to the first queued discovery that is now open. Choosing another discovery to study now puts the current one back at the head of the queue, and banked Ingenuity is never lost.
 - **Institutions**: five pillar columns. Each option is a card with its effect, supporters and opponents (as order icons with clout bars), Sway cost, and forecast. Locked options show which discovery unlocks them.
 - **Treasury**: revenue by source with the nominal-vs-actual incidence bars (§14.2), the Laffer-style peak curve for the current base, spending levels, debt, and the war summary.
 - **Trade & Diplomacy**: partners, routes (goods, volume, profit, dependence), treaties, relations, orbits (yours and the ones you're in), and a proposals inbox.
@@ -902,7 +903,7 @@ Early turns show one contextual hint at a time, read from the board: choosing a 
 
 ### 19.9 Accessibility
 
-Keep day and night themes, the colour-blind-safe nation inks, reduced motion, and keyboard control of every screen. Add hotkeys: End Turn (Enter), next unit (Tab), and one key per overlay and per screen.
+Keep day and night themes, the colour-blind-safe nation inks, reduced motion, and keyboard control of every screen. Add hotkeys: End Turn (Enter), next unit (Tab), and one key per overlay and per screen. The map zooms (mouse wheel about the pointer, + and −, or the corner buttons) and pans by dragging; ⤢ or 0 shows everything we know again.
 
 ---
 

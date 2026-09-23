@@ -84,9 +84,23 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 .build button { text-align: left; }
 .build .ret { float: right; }
 
-#screen { position: fixed; inset: 56px 0 0 0; background: color-mix(in srgb, var(--paper) 96%, transparent);
+#screen { position: fixed; inset: 56px 0 0 0; background: var(--paper);
   overflow: auto; z-index: 10; padding: 16px 24px; }
-#screen .close { position: fixed; right: 20px; top: 66px; }
+#screen .screen-bar { position: sticky; top: -16px; z-index: 5; display: flex; justify-content: flex-end;
+  margin: -16px -24px 0; padding: 10px 24px 0; height: 0; overflow: visible; pointer-events: none; }
+#screen .screen-bar .close { pointer-events: auto; background: var(--ink); color: var(--paper); height: 30px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.disc .badge { float: right; font: bold 10px var(--sans); color: var(--paper); background: var(--accent);
+  padding: 0 5px; border-radius: 8px; }
+.disc.queued { border: 2px dashed var(--accent); }
+.rq { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 12px; }
+.rq .item { border: 1px solid var(--rule); border-radius: var(--radius); padding: 2px 4px 2px 8px; background: var(--paper-2); }
+table.lands td { vertical-align: top; }
+table.lands .build { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); margin: 0; min-width: 340px; }
+table.lands a, .place { cursor: pointer; color: var(--accent); text-decoration: underline dotted; }
+#zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+#zoom button { width: 28px; height: 28px; padding: 0; font-size: 15px; }
+#map.panning { cursor: grabbing; }
 .web { display: grid; grid-template-columns: 110px repeat(4, 1fr); gap: 8px; }
 .web .lane { font-family: var(--serif); align-self: center; color: var(--ink-2); }
 .web .era { font-family: var(--serif); text-align: center; border-bottom: 1px solid var(--rule); }
