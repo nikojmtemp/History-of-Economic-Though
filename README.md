@@ -39,7 +39,7 @@ Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:N
 
 ## Balance (tools.sweep, 30 AI-only games)
 
-First people leaves Hunting at turn 14 (median); all peoples out of Hunting by turn 45 in 97% of games; someone farming by turn 60 in 97%; a manufactory by turn 110 in 87% (target 90%); at least 6 wars in 87%; hegemony in 40% (target 30–60%); Commerce reached in every game, first at median turn 85.
+First people leaves Hunting at turn 15 (median); all peoples out of Hunting by turn 45 in every game; someone farming by turn 60 in every game; a manufactory by turn 110 in 97%; at least 6 wars in 53%; hegemony in 37% (target 30–60%); Commerce reached in every game, first at median turn 80. By turn 150 a people knows about 10 of 12 Agriculture-era and 5 of 10 Commerce-era discoveries.
 
 ## Milestones (§22.3)
 

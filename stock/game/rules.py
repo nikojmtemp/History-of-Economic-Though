@@ -24,7 +24,7 @@ def year_of(turn: int) -> int:
     return year
 
 
-MAP_NODES = (30, 60)  # §1 complexity budget: nodes per map
+MAP_NODES = (40, 80)  # §1 complexity budget: nodes per map
 
 # --- terrain (§5.1) ------------------------------------------------------------------------
 
@@ -296,7 +296,9 @@ UNREST_EVENT_MIN_HANDS = 2.0
 
 # --- research (§12) ----------------------------------------------------------------------
 
-ERA_COST = {1: 30.0, 2: 45.0, 3: 100.0, 4: 180.0}
+ERA_COST = {1: 30.0, 2: 45.0, 3: 150.0, 4: 300.0}
+LATE_ERA = 3  # from Agriculture on, each discovery made makes the next dearer
+LATE_ESCALATION = 0.15  # cost x (1 + this per Agriculture or Commerce discovery already known)
 DIFFUSION_PER_CONTACT = 0.10
 DIFFUSION_PER_ROUTE = 0.10
 DIFFUSION_MAX = 0.60

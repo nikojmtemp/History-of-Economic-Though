@@ -156,12 +156,13 @@ def test_the_ai_goes_to_war() -> None:
     assert wars >= 4
 
 
-@pytest.mark.parametrize("nodes", [29, 61])
-def test_maps_have_30_to_60_nodes(nodes: int) -> None:
+@pytest.mark.parametrize("nodes", [39, 81])
+def test_maps_have_40_to_80_nodes(nodes: int) -> None:
     with pytest.raises(ValueError):
         generate(seed=1, nodes=nodes)
-    assert len(generate(seed=1, nodes=30).nodes) == 30
-    assert len(generate(seed=1, nodes=60).nodes) == 60
+    assert len(generate(seed=1, nodes=40).nodes) == 40
+    assert len(generate(seed=1, nodes=80).nodes) == 80
+    assert len(generate(seed=1).nodes) == 60
 
 
 def test_losing_a_tiny_last_town_still_leaves_a_band() -> None:

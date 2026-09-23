@@ -58,9 +58,9 @@ def test_world_is_connected_and_every_people_starts_with_a_band(seed: int) -> No
 
 
 def test_spec_round_trip() -> None:
-    cfg = parse_spec("random:42:30:3")
-    assert (cfg.seed, cfg.nodes, cfg.nations) == (42, 30, 3)
-    assert generate(cfg).spec == "random:42:30:3"
+    cfg = parse_spec("random:42:40:3")
+    assert (cfg.seed, cfg.nodes, cfg.nations) == (42, 40, 3)
+    assert generate(cfg).spec == "random:42:40:3"
     with pytest.raises(ValueError):
         parse_spec("random:1:10:5")  # too many peoples for the map
 
@@ -419,3 +419,17 @@ def test_a_pasture_with_no_herds_to_tend_returns_nothing() -> None:
     node.herds = 10.0  # one herdsman's worth: the standing pasture employs him
     assert actions.expected_return(w, n, node, "pasture") == 0.0
     assert actions.work_return(w, n, node, "pasture") > 0.0
+
+
+def test_each_later_discovery_makes_the_next_dearer() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    n = w.nations[me]
+    n.known += ["taming", "tillage"]
+    before = research.cost(w, n, "rotation")
+    early = research.cost(w, n, "weaving")
+    n.known.append("land_tenure")  # an Agriculture-era discovery
+    assert research.cost(w, n, "rotation") == pytest.approx(
+        before * (1 + rules.LATE_ESCALATION) / 1.0, rel=0.01
+    )
+    assert research.cost(w, n, "weaving") == early  # the early eras do not escalate

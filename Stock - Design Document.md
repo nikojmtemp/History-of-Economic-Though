@@ -36,7 +36,7 @@ These five rules decide every argument about scope. If a mechanic serves none of
 | Unit types | 9 (including civilian) |
 | Discoveries | 36 |
 | Nations | 3–6 (default 5) |
-| Map nodes | 30–60 (default 45) |
+| Map nodes | 40–80 (default 60) |
 | Turns | 150 |
 | Session | 2–3 hours |
 
@@ -116,7 +116,7 @@ Nations move through these phases at different speeds, and can go backwards. A n
 
 ### 5.1 Nodes
 
-The map is a **graph of 30–60 nodes**, generated procedurally (the existing `worldgen` and planar layout carry over). A node is a region. Each node has:
+The map is a **graph of 40–80 nodes** (60 by default; a bigger world is spread wider, not packed tighter), generated procedurally (the existing `worldgen` and planar layout carry over). A node is a region. Each node has:
 
 - **Terrain** (one of six), which sets its base yields:
 
@@ -492,7 +492,7 @@ Each discovery has:
 - **Knowledge prerequisites**: at most two, and whenever possible either one will do (OR). There are no single-chain dependencies.
 - **An Observation**: a material condition in the world, such as "have followed wild herds for 3 turns" or "Extent ≥ 40". Meeting it **halves the cost**. Observations are never hard gates. The only hard limits are physical: you can research Sail with no coast, but you can't build a Port without one.
 - **Unlocks**: Works, units, institution options, verbs.
-- **Cost** by era: 20, 45, 90, and 160 Ingenuity.
+- **Cost** by era: 30, 45, 150, and 300 Ingenuity. From Agriculture on, the web grows harder: each Agriculture- or Commerce-era discovery already known makes the next one of those eras 15% dearer. A people can climb the early eras whole, but by the last turn it will know only about half of the Commerce column, and must choose which half.
 
 ### 12.3 Diffusion
 

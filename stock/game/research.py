@@ -113,7 +113,11 @@ def diffusion(world: World, n: Nation, key: str) -> float:
 
 def cost(world: World, n: Nation, key: str, m: dict[str, float] | None = None) -> float:
     m = m if m is not None else metrics(world, n)
-    base = rules.ERA_COST[rules.DISCOVERIES[key].era]
+    era = rules.DISCOVERIES[key].era
+    base = rules.ERA_COST[era]
+    if era >= rules.LATE_ERA:  # the deeper into the later eras, the harder each step
+        late = sum(1 for k in n.known if rules.DISCOVERIES[k].era >= rules.LATE_ERA)
+        base *= 1.0 + rules.LATE_ESCALATION * late
     if observation_met(n, key, m):
         base *= 0.5
     return round(base * (1.0 - diffusion(world, n, key)), 1)

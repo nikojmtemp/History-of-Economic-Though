@@ -22,7 +22,7 @@ from stock.game.state import Edge, Nation, Node, Unit, World
 @dataclass(frozen=True)
 class WorldGenConfig:
     seed: int = 0
-    nodes: int = 45
+    nodes: int = 60
     nations: int = 5
     rivers: int = 2
 
@@ -265,12 +265,13 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
 
     ids = [f"n{i}" for i in range(n)]
     names = assign_names(cfg.seed, [(ids[i], terrain[i], on_river[i]) for i in range(n)], cfg.nations)
+    spread = math.sqrt(n / 45)  # a bigger world is wider, not more crowded
     nodes = {
         ids[i]: Node(
             id=ids[i],
             name=names.nodes[ids[i]],
-            x=round(1000 * points[i][0] / CANVAS_W, 1),
-            y=round(600 * points[i][1] / CANVAS_H, 1),
+            x=round(1000 * spread * points[i][0] / CANVAS_W, 1),
+            y=round(600 * spread * points[i][1] / CANVAS_H, 1),
             terrain=terrain[i],
             river=on_river[i],
             coast=terrain[i] == "COAST",
