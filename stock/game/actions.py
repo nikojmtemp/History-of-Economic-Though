@@ -272,6 +272,10 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         if str(a.get("key", "")) not in n.research_queue:
             return "not in the queue"
         return None
+    if kind == "auto_invest":
+        if not n.knows(rules.AUTO_INVEST_TECH):
+            return f"needs {rules.DISCOVERIES[rules.AUTO_INVEST_TECH].name}"
+        return None
     if kind == "reorder_queue":
         at, dest = a.get("index"), a.get("to")
         if not all(isinstance(x, int) and 0 <= x < len(n.build_queue) for x in (at, dest)):
@@ -508,6 +512,8 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
         research.next_from_queue(n)
     elif kind == "unqueue_research":
         n.research_queue.remove(str(a["key"]))
+    elif kind == "auto_invest":
+        n.auto_invest = bool(a.get("on", not n.auto_invest))
     elif kind == "reorder_queue":
         item = n.build_queue.pop(int(a["index"]))
         n.build_queue.insert(int(a["to"]), item)
@@ -525,12 +531,7 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
         else:
             n.build_queue.append({"node": str(a["node"]), "work": work, "status": "waiting"})
     elif kind == "demolish":
-        nd = world.nodes[str(a["node"])]
-        work = str(a["work"])
-        nd.works.remove(work)
-        if work == "pasture" and "pasture" not in nd.works:
-            nd.herds *= 0.5  # half the herd goes to market
-        world.emit(n.id, "demolished", f"{rules.WORKS[work].name} at {nd.name} is pulled down.", nd.id)
+        _pull_down(world, n, world.nodes[str(a["node"])], str(a["work"]))
     elif kind == "unqueue":
         n.build_queue.pop(int(a["index"]))
     elif kind == "road":
@@ -672,30 +673,119 @@ def process_build_queue(world: World, n: Nation) -> None:
                 continue
             n.treasury -= bounty
         n.stock -= cost
-        if work == "pasture" and nd.herds <= 0:
-            nd.herds = rules.TAME_HERDS / 2
-        nd.works.append(work)
-        extra = f" (bounty {bounty:.0f} from the Treasury)" if bounty else ""
-        world.emit(n.id, "built", f"{rules.WORKS[work].name} built at {nd.name}{extra}.", nd.id)
-        if work == "market" and "first_town" not in n.moments:
-            n.moments.append("first_town")
-            world.emit(
-                n.id,
-                "moment",
-                f"{nd.name} becomes a market town: the market widens, and with it the division of labour.",
-                nd.id,
-                quote=rules.MOMENT_QUOTES["first_town"],
-            )
-        if work == "manufactory" and "first_manufactory" not in n.moments:
-            n.moments.append("first_manufactory")
-            world.emit(
-                n.id,
-                "moment",
-                f"The first manufactory opens at {nd.name}: one trade divided into many operations.",
-                nd.id,
-                quote=rules.MOMENT_QUOTES["first_manufactory"],
-            )
+        _raise_work(world, n, nd, work, f" (bounty {bounty:.0f} from the Treasury)" if bounty else "")
     n.build_queue = keep
+    if n.auto_invest and not blocked and n.knows(rules.AUTO_INVEST_TECH):
+        _investors_choose(world, n, r)
+
+
+def best_investment(world: World, n: Nation, r: float) -> tuple[float, Node, str] | None:
+    """The private work that would pay best, anywhere we hold, if it beats the rate of profit."""
+
+    best: tuple[float, Node, str] | None = None
+    for nd in world.nodes_of(n.id):
+        for work, w in rules.WORKS.items():
+            if w.public or build_blocker(world, n, nd.id, work) is not None:
+                continue
+            ret = expected_return(world, n, nd, work)
+            if ret >= r and (best is None or ret > best[0]):
+                best = (ret, nd, work)
+    return best
+
+
+def _investors_choose(world: World, n: Nation, r: float) -> None:
+    """With our own queue served, Stock-holders put what is left where it pays best."""
+
+    replaced = False
+    for _ in range(rules.AUTO_INVEST_PER_TURN):
+        best = best_investment(world, n, r)
+        swap = None
+        if best is None and not replaced and n.knows(rules.REINVEST_TECH):
+            swap = best_replacement(world, n, r)
+            if swap is not None:
+                best = swap[:3]
+        if best is None:
+            return
+        ret, nd, work = best
+        cost = work_cost(n, work)
+        if n.stock - cost < rules.AUTO_INVEST_RESERVE:
+            return
+        if swap is not None:
+            old, old_ret = swap[3], swap[4]
+            _pull_down(world, n, nd, old, f" by its investors (it returned {old_ret:.0%})")
+            replaced = True  # one a turn: capital moves, but not all at once
+        n.stock -= cost
+        _raise_work(world, n, nd, work, f" by its investors, for a return of {ret:.0%}")
+
+
+def work_return(world: World, n: Nation, nd: Node, work: str) -> float:
+    """What a standing work earns per unit of the stock in it; its poorest instance, if several.
+    A work with no hands to employ (a pasture without herds) earns nothing."""
+
+    wage = float(n.last.get("wage", n.prices["food"]))
+    rows = [r for r in economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0))) if r[0] == work]
+    if not rows:
+        return 0.0
+    return min(jobs * (value - wage) for _w, jobs, _per, value in rows) / max(work_cost(n, work), 1.0)
+
+
+def best_replacement(world: World, n: Nation, r: float) -> tuple[float, Node, str, str, float] | None:
+    """In a town with no free slot: (return, node, new work, the work it replaces, that work's
+    return), when the new one beats the rate of profit and pays REINVEST_FACTOR times the old."""
+
+    best: tuple[float, Node, str, str, float] | None = None
+    for nd in world.nodes_of(n.id):
+        if len(nd.works) + queued_on(n, nd.id) < nd.slots():
+            continue
+        candidates = [w for w in set(nd.works) if not rules.WORKS[w].public and w not in rules.NEVER_REPLACED]
+        if not candidates:
+            continue
+        old = min(candidates, key=lambda w: work_return(world, n, nd, w))
+        old_ret = work_return(world, n, nd, old)
+        nd.works.remove(old)  # try the town with the slot freed
+        try:
+            for work, w in rules.WORKS.items():
+                if w.public or work == old or build_blocker(world, n, nd.id, work) is not None:
+                    continue
+                ret = expected_return(world, n, nd, work)
+                if ret >= r and ret >= rules.REINVEST_FACTOR * max(old_ret, 0.01):
+                    if best is None or ret - old_ret > best[0] - best[4]:
+                        best = (ret, nd, work, old, old_ret)
+        finally:
+            nd.works.append(old)
+    return best
+
+
+def _pull_down(world: World, n: Nation, nd: Node, work: str, note: str = "") -> None:
+    nd.works.remove(work)
+    if work == "pasture" and "pasture" not in nd.works:
+        nd.herds *= 0.5  # half the herd goes to market
+    world.emit(n.id, "demolished", f"{rules.WORKS[work].name} at {nd.name} is pulled down{note}.", nd.id)
+
+
+def _raise_work(world: World, n: Nation, nd: Node, work: str, note: str = "") -> None:
+    if work == "pasture" and nd.herds <= 0:
+        nd.herds = rules.TAME_HERDS / 2
+    nd.works.append(work)
+    world.emit(n.id, "built", f"{rules.WORKS[work].name} built at {nd.name}{note}.", nd.id)
+    if work == "market" and "first_town" not in n.moments:
+        n.moments.append("first_town")
+        world.emit(
+            n.id,
+            "moment",
+            f"{nd.name} becomes a market town: the market widens, and with it the division of labour.",
+            nd.id,
+            quote=rules.MOMENT_QUOTES["first_town"],
+        )
+    if work == "manufactory" and "first_manufactory" not in n.moments:
+        n.moments.append("first_manufactory")
+        world.emit(
+            n.id,
+            "moment",
+            f"The first manufactory opens at {nd.name}: one trade divided into many operations.",
+            nd.id,
+            quote=rules.MOMENT_QUOTES["first_manufactory"],
+        )
 
 
 # --- trade and diplomacy (§11, §16) ---------------------------------------------------------------

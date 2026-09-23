@@ -337,6 +337,10 @@ So if you build what the market wants, it's cheap. If you force a manufactory wh
 
 Pre-state, there is no Treasury, so there are no bounties. A chiefdom can only invest in what pays, plus herds.
 
+**Investors choose.** Once **Coinage** is known, the player may leave investment to the Stock-holders (a switch on the Settlements screen, off by default). Each turn, once the player's own queue is served (nothing in it is waiting for Stock), investors build the private work with the best expected return at or above `r`, anywhere the nation holds, up to 2 a turn. They always keep 10 Stock in hand. They never pay bounties or build public works; the player's queue always comes first.
+
+**Capital moves.** Once **Commutation** is also known (land can be sold, so it can be put to a new use), investors facing a town with no free slot may pull down its poorest-paying private work (a pasture with no herds to tend earns nothing) and build in its place a work whose expected return beats `r` and is at least twice the old one's. One such replacement a turn; market towns and ports are never pulled down.
+
 **Demolish.** A work can be pulled down to free its slot; nothing is refunded. This is how a manufactory replaces the workshops of a town that has no room left.
 
 ### 9.7 Security

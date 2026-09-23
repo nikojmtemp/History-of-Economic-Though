@@ -174,6 +174,7 @@ class Nation:
     moments: list[str] = field(default_factory=list)
     decisions: list[Decision] = field(default_factory=list)
     feast_ready: int = 0
+    auto_invest: bool = False  # Stock-holders build the best-paying works themselves (§9.6)
     war_weariness: float = 0.0
     casus_belli: dict[str, int] = field(default_factory=dict)  # nation -> turns left
     tributes: list[dict[str, Any]] = field(default_factory=list)  # {"to", "turns", "share"} we pay

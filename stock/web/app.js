@@ -708,7 +708,7 @@ function focusNode(id) {
 function investButtons(n) {
   const shown = (n.buildable || []).filter((b) => !(b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")));
   const full = shown.find((b) => b.why && b.why.startsWith("no free slot"));
-  if (full && shown.every((b) => b.why && b.why.startsWith("no free slot"))) {
+  if (full) {  // a full town has room for nothing, whatever else it lacks
     return `<span class="muted small">Every slot is taken (${esc(full.why.replace("no free slot ", "").replace(/[()]/g, ""))}). More hands open more slots, or pull down a work.</span>`;
   }
   let h = "";
@@ -729,11 +729,20 @@ function queueList() {
     <button class="small" ${i < q.length - 1 ? "" : "disabled"} title="Later" onclick="act({kind:'reorder_queue',index:${i},to:${i + 1}})${again}">▼</button>
     <button class="small" title="Drop" onclick="act({kind:'unqueue',index:${i}})${again}">✕</button></td></tr>`).join("") + `</table>`;
 }
+function autoInvestButton() {
+  const me = S.me;
+  const tip = me.auto_invest_why
+    ? `Let Stock-holders choose their own works. Not yet: ${me.auto_invest_why}.`
+    : me.auto_invest
+      ? `Our investors choose for themselves: once our own queue is served, they build whatever pays best, anywhere we hold, up to 2 works a turn, keeping 10 Stock in hand.${S.me.can_reinvest} Click to take the choice back.`
+      : `Let our Stock-holders choose for themselves: once our own queue is served, they build whatever pays best, anywhere we hold, up to 2 works a turn, keeping 10 Stock in hand.${S.me.can_reinvest}`;
+  return `<button class="${me.auto_invest ? "on" : ""}" ${me.auto_invest_why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'auto_invest',on:${!me.auto_invest}})${screen ? ".then(renderScreen)" : ""}">Investors choose: ${me.auto_invest ? "on" : "off"}</button>`;
+}
 function screenSettlements() {
   const me = S.me;
   const mine = S.nodes.filter((n) => n.owner === me.id).sort((a, b) => b.hands - a.hands);
   let h = `<h2>Settlements</h2><p class="muted">Stock ${fmt(me.stock)} (${sgn(me.stock_income)} a turn) · rate of profit ${pct(me.breakdowns.stock?.rate_of_profit)}${me.seat === "civil" ? ` · Treasury ${fmt(me.treasury)}` : ""}. Green returns beat the rate of profit and private Stock builds them; red ones need a bounty from the Treasury. Works marked T are paid by the Treasury at once.</p>`;
-  h += `<h3>Investment queue</h3>` + queueList();
+  h += `<h3>Investment queue ${autoInvestButton()}</h3>` + queueList();
   h += `<h3>Our settlements</h3>`;
   if (!mine.length) h += `<p class="muted">We have no settlement yet: settle a band first.</p>`;
   else {
@@ -839,6 +848,7 @@ function screenBook() {
   entries.push(
     ["War", "Soldiers are hands taken from work: an army is paid for in produce as well as in Treasury. Each kind of army suits a kind of society; shepherds' riders rule the open grass, walls and hills blunt them, and a standing army with firearms beats everything. Armies more than two steps from our towns, or crowded, lose cohesion."],
     ["Trade", "Goods move from where they are cheap to where they are dear while the gap pays for carriage. The gap is the merchants' profit, and it goes to whoever opened the route. Every route widens both markets; a people that buys much of what it eats from one partner depends on it."],
+    ["Investors choose", "Once Coinage is known, a people may leave investment to its Stock-holders. After our own investment queue is served, they build whatever work pays best against the rate of profit, anywhere we hold, keeping a little Stock in hand. Our own queue always comes first. Once Commutation is known, investors in a full town may also pull down its poorest-paying work to build one that pays at least twice as much (one such change a turn; market towns and ports are kept)."],
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],

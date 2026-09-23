@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import math
 from functools import cache
+from typing import Any
 
 import pytest
 
@@ -317,3 +318,83 @@ def test_the_investment_queue_can_be_reordered() -> None:
     assert actions.act(w, me, {"kind": "reorder_queue", "index": 1, "to": 0}) is None
     assert [q["node"] for q in n.build_queue] == ["b", "a"]
     assert actions.act(w, me, {"kind": "reorder_queue", "index": 2, "to": 0}) == "no such queue item"
+
+
+def _investing_town() -> tuple[World, str, Any]:
+    w = generate(seed=5)
+    me, uid = _me(w)
+    n = w.nations[me]
+    n.known += ["tillage", "weaving", rules.AUTO_INVEST_TECH]
+    node = w.nodes[w.units[uid].node]
+    actions.act(w, me, {"kind": "settle", "unit": uid})
+    node.hands = 30.0
+    n.prices["wares"] = 8.0  # dear wares: a workshop pays
+    return w, me, node
+
+
+def test_investors_choose_their_own_works_once_allowed() -> None:
+    w, me, node = _investing_town()
+    n = w.nations[me]
+    n.stock = 100.0
+    actions.process_build_queue(w, n)
+    assert "workshop" not in node.works  # not without leave
+    assert actions.act(w, me, {"kind": "auto_invest", "on": True}) is None
+    actions.process_build_queue(w, n)
+    built = rules.AUTO_INVEST_PER_TURN
+    assert node.works.count("workshop") + node.works.count("fields") + node.works.count("pasture") >= 1
+    assert 100.0 - n.stock <= built * max(rules.WORKS[k].cost for k in ("workshop", "fields", "pasture"))
+    assert n.stock >= rules.AUTO_INVEST_RESERVE
+
+
+def test_investors_wait_for_our_queue_and_keep_a_reserve() -> None:
+    w, me, node = _investing_town()
+    n = w.nations[me]
+    n.auto_invest = True
+    n.stock = rules.AUTO_INVEST_RESERVE + 1.0  # not enough to build and keep the reserve
+    before = list(node.works)
+    actions.process_build_queue(w, n)
+    assert node.works == before
+    n.stock = 100.0
+    n.build_queue = [{"node": node.id, "work": "workshop", "status": "waiting"}]
+    n.stock = 5.0  # our own item waits for Stock: the investors wait too
+    actions.process_build_queue(w, n)
+    assert node.works == before
+
+
+def test_investing_on_their_own_needs_the_discovery() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    assert actions.act(w, me, {"kind": "auto_invest", "on": True}) == (
+        f"needs {rules.DISCOVERIES[rules.AUTO_INVEST_TECH].name}"
+    )
+
+
+def _full_town_with_an_idle_pasture() -> tuple[World, str, Any]:
+    w, me, node = _investing_town()
+    n = w.nations[me]
+    n.auto_invest = True
+    node.herds = 0.0  # its pastures have nothing to tend: they earn nothing
+    node.works = ["pasture"] * node.slots()
+    n.stock = 100.0
+    return w, me, node
+
+
+def test_investors_replace_the_poorest_work_once_allowed() -> None:
+    w, me, node = _full_town_with_an_idle_pasture()
+    n = w.nations[me]
+    actions.process_build_queue(w, n)
+    assert node.works == ["pasture"] * node.slots()  # full, and no leave to pull anything down
+    n.known.append(rules.REINVEST_TECH)
+    actions.process_build_queue(w, n)
+    assert len(node.works) == node.slots()
+    assert node.works.count("pasture") == node.slots() - 1  # one replaced a turn
+    assert any(e.kind == "demolished" and "by its investors" in e.text for e in w.log)
+
+
+def test_investors_keep_trade_towns_and_works_that_pay() -> None:
+    w, me, node = _full_town_with_an_idle_pasture()
+    n = w.nations[me]
+    n.known.append(rules.REINVEST_TECH)
+    node.works = ["market"] * node.slots()
+    actions.process_build_queue(w, n)
+    assert node.works == ["market"] * node.slots()

@@ -449,6 +449,15 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "bargaining": _r(L.get("bargaining", 0.0)),
             "breakdowns": _breakdowns(world, n),
             "build_queue": n.build_queue,
+            "auto_invest": n.auto_invest,
+            "can_reinvest": (
+                "\nIn a full town they will also pull down the poorest-paying work"
+                " for one that pays twice as much, one a turn."
+                if n.knows(rules.REINVEST_TECH)
+                else f"\nWith {rules.DISCOVERIES[rules.REINVEST_TECH].name},"
+                " they could also replace a full town's poorest work."
+            ),
+            "auto_invest_why": actions.check(world, n, {"kind": "auto_invest"}),
             "decisions": [d.__dict__ for d in n.decisions],
             "feast": actions.check(world, n, {"kind": "feast"}),
             "feast_cost": _r(actions.feast_cost(world, n)),

@@ -250,6 +250,12 @@ R0 = 0.12
 R_CLAMP = (0.03, 0.25)
 BARGAIN_CLAMP = (0.0, 1.5)
 SAVE_RATE = {"stock": 0.7, "proprietors": 0.3, "labour": 0.1}
+AUTO_INVEST_TECH = "coinage"  # with money, Stock-holders can put their capital to work themselves
+AUTO_INVEST_RESERVE = 10.0  # Stock they leave uninvested, for caravans and the unforeseen
+AUTO_INVEST_PER_TURN = 2
+REINVEST_TECH = "commutation"  # land that can be sold can be put to a new use
+REINVEST_FACTOR = 2.0  # investors replace a work only for one paying at least this many times as much
+NEVER_REPLACED = ("market", "port")  # trade towns are kept whatever they earn
 SECURITY_BASE = 0.55  # the share of savings that becomes Stock with no justice, forts or free institutions
 LABOUR_SAVE_ABOVE = 1.2  # labour saves only from income above this many baskets per head
 COMFORT_NEED = {"labour": 0.5, "proprietors": 1.0, "stock": 1.0}
@@ -544,7 +550,7 @@ DISCOVERIES: dict[str, Discovery] = {
             (("metalworking", "gifts"),),
             ("routes", 2),
             "Hold 2 routes",
-            "Customs, Tax Farming",
+            "Customs, Tax Farming; investors may choose their own works",
         ),
         _d(
             "fairs",
@@ -587,7 +593,7 @@ DISCOVERIES: dict[str, Discovery] = {
             (("land_tenure",), ("coinage",)),
             ("rent_share", 0.3),
             "Rent is 30% of produce",
-            "Alienable Land, Free Labour, Land Tax",
+            "Alienable Land, Free Labour, Land Tax; investors may replace poor works",
         ),
         _d(
             "militia",
