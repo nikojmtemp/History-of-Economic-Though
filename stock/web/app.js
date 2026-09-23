@@ -63,6 +63,10 @@ function renderTop() {
   const modeIdx = ["hunting", "pasturage", "agriculture", "commerce"].indexOf(me.mode);
   const chall = me.mode_challenger ? `${me.mode_challenger} leads ${me.mode_streak}/3 turns` : SEAT[me.seat];
   $("mode-banner").innerHTML = `Age of ${esc(S.modes[modeIdx])}<span class="sub">${esc(chall)}</span>`;
+  const wars = me.war.wars;
+  $("war-badge").hidden = !wars.length;
+  $("war-badge").innerHTML = wars.length ? `⚔ At war<span class="sub">${wars.map((w) => esc(nationName(w.with))).join(", ")}</span>` : "";
+  $("war-badge").dataset.tip = armyTip(me);
   $("year").textContent = S.year < 0 ? `${-S.year} BC` : `AD ${S.year}`;
   $("turn").textContent = `Turn ${S.turn} of ${S.last_turn} · ${me.name}`;
   const b = me.breakdowns || {};
@@ -129,7 +133,7 @@ function renderSociety() {
   }
   h += `<div class="small muted" data-tip="Market prices in baskets (one person's food for a turn).">Prices: food ${fmt(me.prices.food, 2)} · wares ${fmt(me.prices.wares, 2)} · luxuries ${fmt(me.prices.luxuries, 2)}</div>`;
   h += `<div class="small muted">Wage ${fmt(me.wage, 2)} · bargaining ${fmt(me.bargaining, 2)} · per head ${fmt(me.per_head, 2)}</div>`;
-  const feastTip = me.feast ? `Feast: ${me.feast}` : "Spend stored food on a feast: Sway +5, everyone's contentment +5.";
+  const feastTip = me.feast ? `Feast: ${me.feast}` : `Spend ${fmt(me.feast_cost, 0)} stored food on a feast: Sway +5, everyone's contentment +5, and a burst of births (+6% people next turn). The feast costs more the more people we have.`;
   h += `<div class="verbs"><button ${me.feast ? "disabled" : ""} data-tip="${esc(feastTip)}" onclick="act({kind:'feast'})">Feast</button>`;
   if (me.seat === "chiefdom") h += `<button ${me.found_government ? "disabled" : ""} data-tip="${esc(me.found_government || "Found a civil government: a treasury, taxes and courts. 20 Sway.")}" onclick="act({kind:'found_government'})">Found government</button>`;
   if (me.seat === "interregnum") h += `<button ${me.restore ? "disabled" : ""} data-tip="${esc(me.restore || "Restore the government: 30 Sway.")}" onclick="act({kind:'restore'})">Restore</button>`;
@@ -193,7 +197,8 @@ function renderMap() {
     </g>`);
     if (reach.has(n.id)) svg.push(`<circle class="reach" cx="${n.x}" cy="${n.y}" r="${r + 6}"/>`);
     if (strike[n.id] != null) svg.push(`<circle class="strike" cx="${n.x}" cy="${n.y}" r="${r + 6}"/><text class="odds" x="${n.x}" y="${n.y - r - 12}" text-anchor="middle">${pct(strike[n.id])}</text>`);
-    if (n.enemy) svg.push(`<circle class="enemy-ring" cx="${n.x}" cy="${n.y}" r="${r + 2}"/>`);
+    if (n.enemy) svg.push(`<circle class="enemy-ring" cx="${n.x}" cy="${n.y}" r="${r + 3}"/>`);
+    if (n.conquered > 0 && n.visible) svg.push(`<text class="taken-mark" x="${n.x}" y="${n.y + r + 22}" text-anchor="middle">⚑ taken</text>`);
     if (n.siege) svg.push(`<circle class="siege-ring" cx="${n.x}" cy="${n.y}" r="${r + 9}"><title>Besieged: ${n.siege.turns} turns left</title></circle>`);
     if (n.forts) svg.push(`<text class="node-sub" x="${n.x + r + 2}" y="${n.y + 3}">${"▣".repeat(n.forts)}</text>`);
     if (sel && sel.type === "node" && sel.id === n.id) svg.push(`<circle class="selected-ring" cx="${n.x}" cy="${n.y}" r="${r + 5}"/>`);
@@ -529,11 +534,23 @@ function showEnd() {
   $("moment").innerHTML = `<div class="card" style="max-width:760px"><h2>${mine ? "Victory" : "The game is decided"} ${how}</h2><p class="serif">${esc(w.text)}</p>${charts(["share", "per_head"])}<p class="small muted">The curves are a record, not a score. You may keep playing.</p><button class="primary" onclick="$('moment').hidden=true">Keep playing</button> <button onclick="$('moment').hidden=true;openScreen('reports')">Reports</button></div>`;
   $("moment").hidden = false;
 }
+const CARD_KINDS = ["war", "captured", "exile", "eliminated", "peace", "moment", "mode", "regression", "victory",
+  "plague", "coalition", "hegemony"];
+const CARD_TITLE = { war: "War", captured: "A town changes hands", exile: "Exile", eliminated: "A people is no more",
+  peace: "Peace", regression: "A regression", victory: "The end of the game", plague: "Plague",
+  coalition: "The balance of power", hegemony: "Ascendancy" };
+let cardQueue = [];
 function showMoments(prevTurn) {
-  const fresh = S.log.filter((e) => e.turn === prevTurn && ["moment", "mode", "regression", "victory", "plague", "coalition", "hegemony"].includes(e.kind));
-  if (!fresh.length) return;
-  const e = fresh[0];
-  $("moment").innerHTML = `<div class="card"><h2>${e.kind === "regression" ? "A regression" : e.kind === "victory" ? "The end of the game" : "A moment"}</h2><p class="serif">${esc(e.text)}</p>${e.quote ? `<q>“${esc(e.quote)}”<br><span class="small">— Adam Smith, The Wealth of Nations</span></q>` : ""}<button class="primary" onclick="$('moment').hidden=true">Continue</button></div>`;
+  cardQueue = S.log.filter((e) => e.turn === prevTurn && CARD_KINDS.includes(e.kind));
+  nextCard();
+}
+function nextCard() {
+  const e = cardQueue.shift();
+  if (!e) { $("moment").hidden = true; return; }
+  const grim = ["war", "captured", "exile", "eliminated"].includes(e.kind);
+  const title = CARD_TITLE[e.kind] || "A moment";
+  const more = cardQueue.length ? ` <span class="small muted">(${cardQueue.length} more)</span>` : "";
+  $("moment").innerHTML = `<div class="card ${grim ? "grim" : ""}"><h2>${title}${more}</h2><p class="serif">${esc(e.text)}</p>${e.quote ? `<q>“${esc(e.quote)}”<br><span class="small">— Adam Smith, The Wealth of Nations</span></q>` : ""}<button class="primary" onclick="nextCard()">Continue</button></div>`;
   $("moment").hidden = false;
 }
 
@@ -708,7 +725,7 @@ document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
   const endKey = e.key === "Enter" || e.key === " " || e.code === "Space";
   if (endKey) e.preventDefault();  // Space would otherwise also press the focused button
-  if (endKey && !$("moment").hidden) { $("moment").hidden = true; return; }
+  if (endKey && !$("moment").hidden) { nextCard(); return; }
   if (endKey && screen) return;  // not while a screen is open
   if (endKey) endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }

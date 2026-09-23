@@ -432,18 +432,20 @@ def sign(world: World, a: Nation, b: Nation, kind: str) -> None:
         world.emit(x.id, "treaty", f"{name} signed with {y.name}.")
 
 
-def break_treaties(world: World, breaker: Nation, victim: Nation) -> None:
-    """Attacking a people we have a treaty with breaks it, and our word with everyone."""
+def break_treaties(world: World, breaker: Nation, victim: Nation) -> list[str]:
+    """Attacking a people we have a treaty with breaks it, and our word with everyone.
+    Returns the names of the treaties broken."""
 
     broken = [t for t in world.treaties if {t["a"], t["b"]} == {breaker.id, victim.id}]
     if not broken:
-        return
+        return []
     for t in broken:
         world.treaties.remove(t)
     for other in world.nations.values():
         if other.id != breaker.id:
             other.relations[breaker.id] = other.relations.get(breaker.id, 0.0) - rules.BREAK_FAITH_RELATIONS
     world.emit(None, "treaty", f"{breaker.name} break faith with {victim.name}.")
+    return [rules.TREATIES[t["kind"]].name.lower() for t in broken]
 
 
 def allies_of(world: World, nation_id: str) -> list[str]:

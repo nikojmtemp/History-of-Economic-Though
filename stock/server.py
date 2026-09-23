@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from stock.game import actions, ai, turn, view
@@ -44,8 +44,15 @@ def create_app(spec: str | None = None) -> FastAPI:
     app.state.game = game
 
     @app.get("/")
-    def index() -> FileResponse:
-        return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
+    def index() -> HTMLResponse:
+        """The page, with each script and stylesheet stamped by its modification time so
+        a browser never runs yesterday's code against today's server."""
+
+        html = (WEB / "index.html").read_text(encoding="utf-8")
+        for asset in ("app.js", "app.css", "tokens.css"):
+            stamp = int((WEB / asset).stat().st_mtime)
+            html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}")
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
     @app.get("/state")
     def state() -> dict[str, Any]:

@@ -263,9 +263,9 @@ STOCK_OWNERS_PER_WORK = 0.25
 
 # --- population (§20) ---------------------------------------------------------------------
 
-GROWTH_PER_SURPLUS = 0.05
-GROWTH_CLAMP = (-0.10, 0.05)
-HIGH_WAGE_BONUS = 0.01
+GROWTH_PER_SURPLUS = 0.10
+GROWTH_CLAMP = (-0.10, 0.10)
+HIGH_WAGE_BONUS = 0.02
 
 # --- the seat and sway (§7) --------------------------------------------------------------
 
@@ -277,6 +277,7 @@ RESTORE_COST = 30.0
 FEAST_FOOD_PER_HAND = 0.5
 FEAST_SWAY = 5.0
 FEAST_COOLDOWN = 3
+FEAST_GROWTH = 0.06  # a one-turn burst of births, beyond the usual cap
 INSTITUTION_COOLDOWN = 5
 
 # --- unrest (§10.4) ------------------------------------------------------------------------
@@ -1198,6 +1199,7 @@ CONQUEST_UNREST = 30.0
 PLUNDER_UNREST = 50.0
 RAZE_MAX_HANDS = 3.0
 EXILE_HANDS = 2.0
+EXILE_MIN_HANDS = 1.5  # a people losing its last town always keeps a band this large
 EXILE_MAX_TURNS = 10
 
 

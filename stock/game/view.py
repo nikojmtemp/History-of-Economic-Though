@@ -437,6 +437,7 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "build_queue": n.build_queue,
             "decisions": [d.__dict__ for d in n.decisions],
             "feast": actions.check(world, n, {"kind": "feast"}),
+            "feast_cost": _r(actions.feast_cost(world, n)),
             "found_government": actions.check(world, n, {"kind": "found_government"}),
             "restore": actions.check(world, n, {"kind": "restore"}),
             "history": n.history[-150:],

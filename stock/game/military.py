@@ -114,7 +114,7 @@ def declare_war(world: World, n: Nation, target: Nation, *, called: bool = False
     from stock.game import trade  # trade does not import military; this keeps it that way
 
     free = target.id in n.casus_belli or called
-    trade.break_treaties(world, n, target)
+    broken = trade.break_treaties(world, n, target)
     world.wars.append({"a": n.id, "b": target.id, "since": world.turn, "score": {n.id: 0.0, target.id: 0.0}})
     n.relations[target.id] = min(n.relations.get(target.id, 0.0), 0.0) - 50.0
     target.relations[n.id] = min(target.relations.get(n.id, 0.0), 0.0) - 50.0
@@ -130,7 +130,8 @@ def declare_war(world: World, n: Nation, target: Nation, *, called: bool = False
         else "without a cause, at a cost in Sway"
     )
     world.emit(n.id, "war", f"We declare war on {target.name}, {why}.")
-    world.emit(target.id, "war", f"{n.name} declares war on us.")
+    faith = f", breaking their {' and '.join(broken)} with us" if broken else ""
+    world.emit(target.id, "war", f"{n.name} declares war on us{faith}.")
     if not called:  # the defender's allies come to its aid
         for ally_id in trade.allies_of(world, target.id):
             ally = world.nations[ally_id]
@@ -503,20 +504,20 @@ def resolve_capture(world: World, n: Nation, node_id: str, choice: str, loser_id
 def exile(world: World, loser: Nation, lost: Node) -> None:
     """The last settlement is gone: the survivors take to the road (§7.3)."""
 
-    if world.units_of(loser.id):
+    if any(u.kind in ("band", "horde") for u in world.units_of(loser.id)):
         world.emit(loser.id, "exile", "Our last settlement is lost. Our people on the move carry on.")
     else:
+        # the refugees: whoever can leave the fallen town, and those who were out in the fields
         take = min(rules.EXILE_HANDS, max(0.0, lost.hands - 1.0))
-        if take < 1.0:
-            return
         lost.hands -= take
+        size = max(take, rules.EXILE_MIN_HANDS)
         spot = next((x for x in world.neighbours(lost.id) if world.nodes[x].owner is None), lost.id)
         uid = world.new_id("u")
-        world.units[uid] = Unit(uid, loser.id, "band", spot, take, moves_left=0)
+        world.units[uid] = Unit(uid, loser.id, "band", spot, size, moves_left=0)
         world.emit(
             loser.id,
             "exile",
-            f"Our last settlement is lost. {take:.0f} hands flee as a band to {world.nodes[spot].name}.",
+            f"Our last settlement is lost. {size:.1f} hands flee as a band to {world.nodes[spot].name}.",
             spot,
         )
     loser.seat = "council"

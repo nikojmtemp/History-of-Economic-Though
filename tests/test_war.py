@@ -162,3 +162,24 @@ def test_maps_have_30_to_60_nodes(nodes: int) -> None:
         generate(seed=1, nodes=nodes)
     assert len(generate(seed=1, nodes=30).nodes) == 30
     assert len(generate(seed=1, nodes=60).nodes) == 60
+
+
+def test_losing_a_tiny_last_town_still_leaves_a_band() -> None:
+    w, me, them, a, b = frontier()
+    b.hands = 2.0  # a town settled only last turn
+    military.declare_war(w, w.nations[me], w.nations[them])
+    military.capture(w, me, b)
+    exiles = [u for u in w.units_of(them) if u.kind == "band"]
+    assert len(exiles) == 1 and exiles[0].hands >= rules.EXILE_MIN_HANDS
+    from stock.game import victory
+
+    victory.check_elimination(w)
+    assert w.nations[them].alive
+
+
+def test_an_army_alone_is_not_a_people_in_exile() -> None:
+    w, me, them, a, b = frontier()
+    raise_at(w, them, b, "warband", hands=1.0)
+    military.declare_war(w, w.nations[me], w.nations[them])
+    military.capture(w, me, b)
+    assert any(u.kind == "band" for u in w.units_of(them))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from functools import cache
 
@@ -262,3 +263,18 @@ def test_every_people_has_wild_herds_within_two_steps(seed: int) -> None:
         near = {u.node} | set(w.neighbours(u.node))
         near |= {y for x in list(near) for y in w.neighbours(x)}
         assert any("wild_herds" in w.nodes[x].features for x in near), (seed, u.nation)
+
+
+def test_a_feast_spikes_growth_and_costs_more_with_more_people() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    for _ in range(3):
+        turn.end_turn(w, run_ai=False)
+    w.nations[me].store["food"] = 1000.0
+    base = copy.deepcopy(w)
+    turn.end_turn(base, run_ai=False)
+    first = actions.feast_cost(w, w.nations[me])
+    assert actions.act(w, me, {"kind": "feast"}) is None
+    assert first == pytest.approx(rules.FEAST_FOOD_PER_HAND * w.hands_of(me))
+    turn.end_turn(w, run_ai=False)
+    assert w.hands_of(me) > base.hands_of(me) * 1.04

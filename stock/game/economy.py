@@ -670,6 +670,7 @@ def run_nation(world: World, n: Nation, plan: Plan) -> dict[str, Any]:
         growth = min(growth, -0.3 * (1.0 - fed))
     if hands > 0 and income["labour"] / max(size["labour"], 1e-9) > 1.5 * p["food"]:
         growth += rules.HIGH_WAGE_BONUS
+    growth += n.counters.pop("feast_growth", 0.0)
     for nd in world.nodes_of(n.id):
         nd.hands = max(1.0, nd.hands * (1.0 + growth))
     for u in world.units_of(n.id):

@@ -20,6 +20,12 @@ def split_cost(n: Nation) -> float:
     return rules.SPLIT_COST_ELDERS if n.knows("elders") else rules.SPLIT_COST
 
 
+def feast_cost(world: World, n: Nation) -> float:
+    """Food for everyone: the more people, the dearer the feast."""
+
+    return rules.FEAST_FOOD_PER_HAND * world.hands_of(n.id)
+
+
 def _unit(world: World, n: Nation, a: Action) -> Unit | None:
     u = world.units.get(str(a.get("unit", "")))
     return u if u is not None and u.nation == n.id else None
@@ -240,7 +246,7 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
     if kind == "feast":
         if n.feast_ready > 0:
             return f"feasted recently ({n.feast_ready} turns)"
-        need = rules.FEAST_FOOD_PER_HAND * world.hands_of(n.id)
+        need = feast_cost(world, n)
         if n.store["food"] < need:
             return f"needs {need:.0f} stored food"
         return None
@@ -467,7 +473,8 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
     elif kind == "barter":
         trade.open_barter(world, n, world.nations[str(a["nation"])])
     elif kind == "feast":
-        n.store["food"] -= rules.FEAST_FOOD_PER_HAND * world.hands_of(n.id)
+        n.store["food"] -= feast_cost(world, n)
+        n.counters["feast_growth"] = rules.FEAST_GROWTH
         n.sway = min(rules.SWAY_CAP, n.sway + rules.FEAST_SWAY + (1.0 if n.knows("elders") else 0.0))
         for order in rules.ORDERS:
             n.orders[order].contentment = economy.clamp(n.orders[order].contentment + 5.0, 0.0, 100.0)

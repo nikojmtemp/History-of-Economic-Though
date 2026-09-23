@@ -211,7 +211,7 @@ The same verbs cost Sway everywhere: changing an institution, answering or refus
 
 Before the state exists, you move people, not policies. The band-era verbs are real map play:
 
-- **Band** (a civilian unit carrying 2–10 hands): **Hunt** (camp and produce food; the node depletes), **Move**, **Split** (costs 5 Sway; creates a new band of at least 2 hands; this is how you expand), **Merge**, **Follow the herds** (costs one turn of food; 3 turns spent following wild herds makes Taming cheaper), **Barter** (next to a foreign band or node: opens a Barter route, §11), **Raid** (take food or herds), **Feast** (spend food for Sway and contentment), **Claim** (make the node yours; needs 2 turns camped).
+- **Band** (a civilian unit carrying 2–10 hands): **Hunt** (camp and produce food; the node depletes), **Move**, **Split** (costs 5 Sway; creates a new band of at least 2 hands; this is how you expand), **Merge**, **Follow the herds** (costs one turn of food; 3 turns spent following wild herds makes Taming cheaper), **Barter** (next to a foreign band or node: opens a Barter route, §11), **Raid** (take food or herds), **Feast** (spend food, ½ per person, for Sway, contentment and a one-turn burst of births, +6% people), **Claim** (make the node yours; needs 2 turns camped).
 - **Horde** (a Band once herds are owned): moves with its herds, grazes, and herds grow with it. It can fight while moving (§15). It can **Settle** on arable ground, turning into a Settlement with Fields.
 - **Customs**: while in Council, the Property and Labour pillars offer "custom" options: *the kill is shared by custom* or *the kill goes to the killer*. Each has small, clear effects (§13).
 

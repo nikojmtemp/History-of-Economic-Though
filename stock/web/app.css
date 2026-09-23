@@ -118,7 +118,13 @@ table.plain td.n { text-align: right; }
   padding: 6px 12px; border-radius: var(--radius); z-index: 40; }
 .strike { fill: none; stroke: var(--down); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
 .odds { font: bold 11px var(--sans); fill: var(--down); pointer-events: none; }
-.enemy-ring { fill: none; stroke: var(--down); stroke-width: 1.5; stroke-dasharray: 2 2; pointer-events: none; }
+.enemy-ring { fill: none; stroke: var(--down); stroke-width: 3.5; pointer-events: none; }
+.taken-mark { font: bold 9px var(--sans); fill: var(--down); pointer-events: none; }
+#war-badge { font-family: var(--serif); font-size: 16px; color: #fff; background: var(--down); padding: 4px 10px;
+  border-radius: var(--radius); cursor: help; }
+#war-badge .sub { display: block; font: 11px var(--sans); opacity: .9; }
+#moment .card.grim { border: 3px solid var(--down); }
+#moment .card.grim h2 { color: var(--down); }
 .siege-ring { fill: none; stroke: var(--warn); stroke-width: 3; stroke-dasharray: 6 3; }
 .route { stroke-width: 2.5; stroke-dasharray: 6 4; opacity: .8; }
 .route-caravan { stroke: #b8862b; }
