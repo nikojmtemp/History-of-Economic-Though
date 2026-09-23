@@ -324,7 +324,7 @@ Migration between markets, including emigration to foreign nations with open rou
 
 **Stock** is the national pool of productive capital, shown on the top bar. Building a Work costs Stock (costs are in §20). Herds count as Stock in pastoral nations.
 
-- **Savings** come from income (§21): Stock-holders save 60% of profit, Proprietors 10% of rent (0 while their standing needs are unmet), Labour 5% of wages above 1.5 × subsistence.
+- **Savings** come from income (§21): Stock-holders save 70% of profit, Proprietors 30% of rent (plus whatever they cannot spend), Labour 10% of wages above 1.2 × subsistence.
 - **Security** turns savings into Stock: `Stock += savings × Security`. The rest is **hoarded**. Hoards are shown and can be plundered, but they build nothing.
 - **The rate of profit** falls as Stock grows relative to open opportunities: `r = r0 × sqrt(opportunities / Stock)`, clamped between 0.03 and 0.25. Here, opportunities is the combined value of Works the market could profitably support.
 
@@ -342,7 +342,7 @@ Pre-state, there is no Treasury, so there are no bounties. A chiefdom can only i
 ### 9.7 Security
 
 ```
-Security = clamp(0.3 + 0.3 × justice_level/3 + 0.2 × defence_ratio − 0.2 × disorder + property_bonus, 0.2, 1.0)
+Security = clamp(0.55 + 0.3 × justice_level/3 + 0.2 × defence_ratio − 0.2 × disorder + property_bonus, 0.2, 1.0)
 ```
 
 - `defence_ratio` is your military strength compared with the strongest hostile neighbour, clamped to 0–1.

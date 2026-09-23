@@ -341,12 +341,26 @@ const VERB_TIP = {
   tame: "Tame the wild herds: the band becomes a horde, moving with its herds (2 moves).",
   settle: "Settle here: the band's hands become a settlement, planting fields on arable ground.",
 };
+// the selection card can be folded down to its title, to see more of the map
+let selMin = false;
+try { selMin = localStorage.getItem("stock-sel-min") === "1"; } catch (e) { /* storage may be blocked */ }
+function toggleSelection() {
+  selMin = !selMin;
+  try { localStorage.setItem("stock-sel-min", selMin ? "1" : "0"); } catch (e) { /* ignore */ }
+  renderSelection();
+}
 function renderSelection() {
+  renderSelectionBody();
+  const box = $("selection");
+  box.classList.toggle("min", !!sel && selMin);
+  if (sel) box.insertAdjacentHTML("afterbegin", `<button id="sel-toggle" class="small" onclick="toggleSelection()" title="${selMin ? "Show the card (M)" : "Fold the card away (M)"}">${selMin ? "▴ Show" : "▾ Hide"}</button>`);
+}
+function renderSelectionBody() {
   const box = $("selection");
   if (!sel) { box.innerHTML = `<span class="muted">Select a band on the map, or a settlement. Moves: click a band, then a ringed node.</span>`; return; }
   if (sel.type === "unit") {
     const u = S.units.find((x) => x.id === sel.id);
-    if (!u) { sel = null; return renderSelection(); }
+    if (!u) { sel = null; return renderSelectionBody(); }
     const n = nodeById()[u.node];
     if (u.military) { box.innerHTML = armyCard(u, n); return; }
     if (u.kind === "caravan" || u.kind === "merchantman") { box.innerHTML = traderCard(u, n); return; }
@@ -365,7 +379,7 @@ function renderSelection() {
     return;
   }
   const n = nodeById()[sel.id];
-  if (!n) { sel = null; return renderSelection(); }
+  if (!n) { sel = null; return renderSelectionBody(); }
   let h = `<h2>${esc(n.name)} <span class="muted small">${groundText(n)}</span></h2>`;
   h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
   if (n.owner === S.me.id) {
@@ -796,7 +810,7 @@ function screenBook() {
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
-    ["Keys", "Space or Enter ends the turn. Tab selects your next unit. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+    ["Keys", "Space or Enter ends the turn. Tab selects your next unit; M folds the selection card away and back. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
   );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
@@ -856,6 +870,7 @@ document.addEventListener("keydown", (e) => {
   if (endKey) endTurn();
   if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
   if (e.key === "?") { screen = "book"; renderScreen(); }
+  if (!screen && e.key.toLowerCase() === "m" && sel) toggleSelection();
   if (!screen && (e.key === "+" || e.key === "=")) zoomBy(1 / 1.4);
   if (!screen && (e.key === "-" || e.key === "_")) zoomBy(1.4);
   if (!screen && e.key === "0") { view = null; fitMap(); }

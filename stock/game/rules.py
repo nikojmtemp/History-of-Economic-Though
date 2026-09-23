@@ -249,7 +249,8 @@ def division_of_labour(extent: float, commerce_mode: bool) -> float:
 R0 = 0.12
 R_CLAMP = (0.03, 0.25)
 BARGAIN_CLAMP = (0.0, 1.5)
-SAVE_RATE = {"stock": 0.6, "proprietors": 0.18, "labour": 0.05}
+SAVE_RATE = {"stock": 0.7, "proprietors": 0.3, "labour": 0.1}
+SECURITY_BASE = 0.55  # the share of savings that becomes Stock with no justice, forts or free institutions
 LABOUR_SAVE_ABOVE = 1.2  # labour saves only from income above this many baskets per head
 COMFORT_NEED = {"labour": 0.5, "proprietors": 1.0, "stock": 1.0}
 STOCK_LUXURY_NEED = 0.3

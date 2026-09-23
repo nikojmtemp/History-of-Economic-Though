@@ -83,7 +83,9 @@ def security_of(world: World, n: Nation) -> float:
     from stock.game.military import defence_ratio as _defence_ratio  # military imports this module
 
     defence_ratio = _defence_ratio(world, n)
-    return clamp(0.4 + 0.3 * justice / 3 + 0.2 * defence_ratio - 0.2 * disorder + bonus, 0.2, 1.0)
+    return clamp(
+        rules.SECURITY_BASE + 0.3 * justice / 3 + 0.2 * defence_ratio - 0.2 * disorder + bonus, 0.2, 1.0
+    )
 
 
 # --- the plan: who works where -------------------------------------------------------------
