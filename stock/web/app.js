@@ -166,7 +166,9 @@ function renderMap() {
   const selUnit = sel && sel.type === "unit" ? S.units.find((u) => u.id === sel.id) : null;
   const reach = new Set(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack == null).map((m) => m.to) : []);
   const supplied = overlay === "supply" ? supplyReach() : new Set();
-  const strike = Object.fromEntries(selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack != null).map((m) => [m.to, m.attack]) : []);
+  const strikeMoves = selUnit && selUnit.moves ? selUnit.moves.filter((m) => m.ok && m.attack != null) : [];
+  const strike = Object.fromEntries(strikeMoves.map((m) => [m.to, m.attack]));
+  const strikeTip = Object.fromEntries(strikeMoves.map((m) => [m.to, m.breakdown]));
   for (const n of S.nodes) {
     const r = radius(n);
     let fill = TERRAIN_FILL[n.terrain];
@@ -189,7 +191,8 @@ function renderMap() {
     const herdMark = (n.features || []).includes("wild_herds")
       ? `<text class="herd-mark" x="${n.x}" y="${n.y - r - (feats ? 13 : 3)}" text-anchor="middle">wild herds</text>` : "";
     const works = n.works ? n.works.length : 0;
-    svg.push(`<g class="node ${n.visible ? "" : "fog"}" data-node="${n.id}" data-tip="${esc(nodeTip(n))}">
+    const tip = strikeTip[n.id] ? `${oddsTip(strikeTip[n.id], `Attack ${n.name}`)}\n\n${nodeTip(n)}` : nodeTip(n);
+    svg.push(`<g class="node ${n.visible ? "" : "fog"}" data-node="${n.id}" data-tip="${esc(tip)}">
       <circle class="body" cx="${n.x}" cy="${n.y}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
       ${n.owner && works ? `<text class="node-sub" x="${n.x}" y="${n.y + 3}" text-anchor="middle">${works}⌂</text>` : ""}
       <text class="node-label" x="${n.x}" y="${n.y + r + 11}" text-anchor="middle">${esc(n.name)}</text>
@@ -315,8 +318,13 @@ $("map").addEventListener("click", (e) => {
   const nd = e.target.closest("[data-node]");
   if (u) {
     const unit = S.units.find((x) => x.id === u.dataset.unit);
-    if (unit && unit.nation === S.me.id) { sel = { type: "unit", id: unit.id }; renderAll(); return; }
+    if (unit && unit.nation === S.me.id) {
+      sel = sel && sel.type === "unit" && sel.id === unit.id ? null : { type: "unit", id: unit.id };  // again: let go
+      renderAll();
+      return;
+    }
   }
+  if (!nd) { deselect(); return; }  // open ground: let go of the selection
   if (nd) {
     const id = nd.dataset.node;
     const selUnit = sel && sel.type === "unit" ? S.units.find((x) => x.id === sel.id) : null;
@@ -341,6 +349,12 @@ const VERB_TIP = {
   tame: "Tame the wild herds: the band becomes a horde, moving with its herds (2 moves).",
   settle: "Settle here: the band's hands become a settlement, planting fields on arable ground.",
 };
+function deselect() {
+  if (!sel) return;
+  sel = null;
+  renderAll();
+}
+
 // the selection card can be folded down to its title, to see more of the map
 let selMin = false;
 try { selMin = localStorage.getItem("stock-sel-min") === "1"; } catch (e) { /* storage may be blocked */ }
@@ -353,7 +367,7 @@ function renderSelection() {
   renderSelectionBody();
   const box = $("selection");
   box.classList.toggle("min", !!sel && selMin);
-  if (sel) box.insertAdjacentHTML("afterbegin", `<button id="sel-toggle" class="small" onclick="toggleSelection()" title="${selMin ? "Show the card (M)" : "Fold the card away (M)"}">${selMin ? "▴ Show" : "▾ Hide"}</button>`);
+  if (sel) box.insertAdjacentHTML("afterbegin", `<span id="sel-tools"><button class="small" onclick="toggleSelection()" title="${selMin ? "Show the card (M)" : "Fold the card away (M)"}">${selMin ? "▴ Show" : "▾ Hide"}</button> <button class="small" onclick="deselect()" title="Deselect (Escape, or click open ground on the map)">✕</button></span>`);
 }
 function renderSelectionBody() {
   const box = $("selection");
@@ -404,6 +418,24 @@ function renderSelectionBody() {
 
 // --- war ----------------------------------------------------------------------------------------
 
+// every term of the battle odds, as the engine sums them
+function oddsTip(b, head) {
+  const a = b.attacker;
+  const L = [`${head}: we can expect ${pct(b.share)} of the field (luck ±${pct(b.luck)}; over 50% wins).`, "", "OUR SIDE"];
+  L.push(`${a.name}, ${fmt(a.hands)} hand${a.hands === 1 ? "" : "s"}: strength ${fmt(a.strength)}${a.cohesion < 100 ? ` (cohesion ${fmt(a.cohesion, 0)}%)` : ""}`);
+  if (Math.abs(b.matchup - 1) > 0.005) L.push(`× ${fmt(b.matchup, 2)} against ${b.against}${a.name === "Riders" ? (b.matchup < 1.3 ? " (rough ground or walls blunt riders)" : "") : ""}`);
+  L.push(`= ${fmt(b.a_power)}`, "", "THEIR SIDE");
+  for (const d of b.defenders) L.push(`${d.name} (${nationName(d.nation)}), ${fmt(d.hands)} hand${d.hands === 1 ? "" : "s"}: ${fmt(d.strength)}`);
+  if (b.levy_hands) L.push(`Townsfolk levy: ${fmt(b.levy_hands)} hands × 0.5 = ${fmt(b.levy)}`);
+  else if (b.no_levy) L.push(`No levy: ${b.no_levy}`);
+  if (!b.defenders.length && !b.levy_hands) L.push("No one to fight");
+  if (Math.abs(b.terrain - 1) > 0.005) L.push(`× ${fmt(b.terrain, 2)} ${b.terrain_name.toLowerCase()}`);
+  if (b.forts) L.push(`× ${fmt(b.fort_mult, 2)} ${b.forts} fort${b.forts > 1 ? "s" : ""}`);
+  L.push(`= ${fmt(b.d_power)}`);
+  L.push("", `${fmt(b.a_power)} ÷ (${fmt(b.a_power)} + ${fmt(b.d_power)}) = ${pct(b.share)}`);
+  if (b.siege_turns) L.push(`Walls: even after winning the field, a siege of ${b.siege_turns} turns before it falls.`);
+  return L.join("\n");
+}
 function raiseTip(kind, why) {
   const o = S.unit_types[kind] || {};
   const cost = [o.hands && `${o.hands} hands`, o.herds && `${o.herds} herds`, o.wares && `${o.wares} wares`, o.treasury && `${o.treasury} Treasury`].filter(Boolean).join(", ");
@@ -412,7 +444,7 @@ function raiseTip(kind, why) {
 function raidButtons(u) {
   return (u.raids || []).map((r) => {
     const who = S.nations.find((x) => x.id === r.victim)?.name || "them";
-    return `<button data-tip="${esc(`Raid ${nodeById()[r.to].name}: take food, herds and hoards from ${who} without holding the ground. Odds ${pct(r.odds)}. They gain a just cause for war.`)}" onclick="act({kind:'raid',unit:'${u.id}',to:'${r.to}'})">Raid ${esc(nodeById()[r.to].name)} (${pct(r.odds)})</button>`;
+    return `<button data-tip="${esc(`Raid ${nodeById()[r.to].name}: take food, herds and hoards from ${who} without holding the ground. They gain a just cause for war.\n\n${oddsTip(r.breakdown, "Raid")}`)}" onclick="act({kind:'raid',unit:'${u.id}',to:'${r.to}'})">Raid ${esc(nodeById()[r.to].name)} (${pct(r.odds)})</button>`;
   }).join("");
 }
 function armyCard(u, n) {
@@ -421,7 +453,7 @@ function armyCard(u, n) {
   h += `<div class="meter" style="max-width:260px" data-tip="Cohesion ${u.cohesion}: order and morale. Falls in battle, sieges and hunger; recovers in supply. Below 20 the unit is broken."><i style="width:${u.cohesion}%;background:${u.cohesion < 35 ? "var(--down)" : "var(--ink-2)"}"></i></div>`;
   const targets = u.moves.filter((m) => m.ok && m.attack != null);
   h += `<div class="verbs">`;
-  for (const m of targets) h += `<button onclick="if(confirm('Attack ${esc(nodeById()[m.to].name)}? Expect ${pct(m.attack)} of the field.'))act({kind:'move',unit:'${u.id}',to:'${m.to}'})">Attack ${esc(nodeById()[m.to].name)} (${pct(m.attack)})</button>`;
+  for (const m of targets) h += `<button data-tip="${esc(oddsTip(m.breakdown, `Attack ${nodeById()[m.to].name}`))}" onclick="if(confirm('Attack ${esc(nodeById()[m.to].name)}? Expect ${pct(m.attack)} of the field.'))act({kind:'move',unit:'${u.id}',to:'${m.to}'})">Attack ${esc(nodeById()[m.to].name)} (${pct(m.attack)})</button>`;
   h += raidButtons(u);
   if (u.kind === "regiment") h += `<button ${u.upgrade ? "disabled" : ""} data-tip="${esc(u.upgrade || "Arm the regiment with firearms: 20 wares, 10 Treasury.")}" onclick="act({kind:'upgrade',unit:'${u.id}'})">Firearms</button>`;
   for (const other of u.merge_with) h += `<button onclick="act({kind:'merge',unit:'${u.id}',other:'${other}'})">Merge</button>`;
@@ -810,7 +842,7 @@ function screenBook() {
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
-    ["Keys", "Space or Enter ends the turn. Tab selects your next unit; M folds the selection card away and back. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+    ["Keys", "Space or Enter ends the turn. Tab selects your next unit, Escape (or a click on open ground) lets go of it; M folds the selection card away and back. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
   );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
@@ -868,7 +900,11 @@ document.addEventListener("keydown", (e) => {
   if (endKey && !$("moment").hidden) { nextCard(); return; }
   if (endKey && screen) return;  // not while a screen is open
   if (endKey) endTurn();
-  if (e.key === "Escape") { closeScreen(); $("moment").hidden = true; }
+  if (e.key === "Escape") {  // the topmost thing first: a card, a screen, then the selection
+    if (!$("moment").hidden) $("moment").hidden = true;
+    else if (screen) closeScreen();
+    else deselect();
+  }
   if (e.key === "?") { screen = "book"; renderScreen(); }
   if (!screen && e.key.toLowerCase() === "m" && sel) toggleSelection();
   if (!screen && (e.key === "+" || e.key === "=")) zoomBy(1 / 1.4);

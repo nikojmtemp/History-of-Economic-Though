@@ -77,10 +77,10 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 #selection { grid-area: sel; border-top: 1px solid var(--rule); padding: 8px 12px; min-height: 120px;
   max-height: 34vh; overflow: auto; background: var(--paper-2); }
 #selection { position: relative; }
-#selection h2 { margin: 0 0 4px; font-size: 16px; padding-right: 64px; }
+#selection h2 { margin: 0 0 4px; font-size: 16px; padding-right: 90px; }
 #selection.min { min-height: 0; max-height: 40px; overflow: hidden; }
 #selection.min h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#sel-toggle { position: sticky; float: right; top: 0; z-index: 2; margin-left: 8px; }
+#sel-tools { position: sticky; float: right; top: 0; z-index: 2; margin-left: 8px; }
 .verbs { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
 .works { display: flex; gap: 6px; flex-wrap: wrap; }
 .work { border: 1px solid var(--rule); padding: 3px 7px; border-radius: var(--radius); background: var(--paper); }

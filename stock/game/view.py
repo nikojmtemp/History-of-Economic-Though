@@ -16,6 +16,18 @@ def _r(x: float, nd: int = 2) -> float:
     return round(float(x), nd)
 
 
+def _rounded(x: Any) -> Any:
+    """Floats rounded to two places, all the way down."""
+
+    if isinstance(x, float):
+        return round(x, 2)
+    if isinstance(x, dict):
+        return {k: _rounded(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_rounded(v) for v in x]
+    return x
+
+
 def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
     t = rules.UNITS[u.kind]
     out: dict[str, Any] = {
@@ -40,7 +52,9 @@ def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
         why = actions.check(world, n, {"kind": "move", "unit": u.id, "to": to})
         m: dict[str, Any] = {"to": to, "ok": why is None, "why": why, "cost": e.cost()}
         if why is None and actions.hostile_at(world, n, to):
-            m["attack"] = _r(military.odds(world, u, world.nodes[to]))
+            b = military.odds_breakdown(world, u, world.nodes[to])
+            m["attack"] = _r(b["share"])
+            m["breakdown"] = _rounded(b)
         moves.append(m)
     raids = []
     if u.kind in ("warband", "riders", "horde"):
@@ -55,9 +69,8 @@ def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
                         None,
                     )
                 )
-                raids.append(
-                    {"to": to, "victim": victim, "odds": _r(military.odds(world, u, nd, victim=victim))}
-                )
+                b = military.odds_breakdown(world, u, nd, victim=victim)
+                raids.append({"to": to, "victim": victim, "odds": _r(b["share"]), "breakdown": _rounded(b)})
     raise_opts = []
     if not t.military:
         for kind in ("warband", "riders"):

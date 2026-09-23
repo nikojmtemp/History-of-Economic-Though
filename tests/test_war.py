@@ -183,3 +183,19 @@ def test_an_army_alone_is_not_a_people_in_exile() -> None:
     military.declare_war(w, w.nations[me], w.nations[them])
     military.capture(w, me, b)
     assert any(u.kind == "band" for u in w.units_of(them))
+
+
+def test_the_odds_breakdown_adds_up_to_the_odds() -> None:
+    w, me, them, a, b = frontier()
+    b.works.append("fort")
+    military.declare_war(w, w.nations[me], w.nations[them])
+    raise_at(w, them, b, "warband", hands=2.0)
+    u = raise_at(w, me, a, "warband", hands=6.0)
+    x = military.odds_breakdown(w, u, b)
+    d = (sum(d["strength"] for d in x["defenders"]) + x["levy"]) * x["terrain"] * x["fort_mult"]
+    assert x["levy"] == rules.SETTLED_LEVY * b.hands and x["forts"] == 1
+    assert d == pytest.approx(x["d_power"])
+    assert x["a_power"] == pytest.approx(x["attacker"]["strength"] * x["matchup"])
+    assert x["share"] == pytest.approx(x["a_power"] / (x["a_power"] + d))
+    assert x["share"] == pytest.approx(military.odds(w, u, b))
+    assert x["siege_turns"] == rules.SIEGE_TURNS_PER_FORT

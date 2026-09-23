@@ -91,16 +91,68 @@ def _defence_power(
 def odds(world: World, att: Unit, nd: Node, victim: str | None = None) -> float:
     """The share of the field the attacker can expect, before luck (0..1)."""
 
+    return float(odds_breakdown(world, att, nd, victim)["share"])
+
+
+def odds_breakdown(world: World, att: Unit, nd: Node, victim: str | None = None) -> dict[str, Any]:
+    """Every term of `odds`, for the attack tooltip: the same sums battle() makes."""
+
     units = defenders(world, att.nation, nd, victim)
-    if att.kind == "fleet":  # as in battle(): ships fight ships, nothing else
+    fleet = att.kind == "fleet"
+    if fleet:  # as in battle(): ships fight ships, nothing else
         units = [u for u in units if u.kind == "fleet"]
+    listed: list[dict[str, Any]] = [
+        {
+            "name": rules.UNITS[u.kind].name,
+            "nation": u.nation,
+            "hands": u.hands,
+            "strength": unit_strength(world, u),
+        }
+        for u in units
+    ]
+    levy_hands = 0.0
+    no_levy = None
+    if not fleet and nd.owner is not None:
+        if _levy(world, att.nation, nd, victim):
+            levy_hands = nd.hands
+        elif nd.conquered > 0:
+            no_levy = "lately conquered: its people will not turn out"
+    terrain = 1.0 if fleet else nd.t.defence
+    forts = 0 if fleet else nd.works.count("fort")
+    fort_mult = 1.0 + rules.FORT_BONUS * forts
+    if fleet:
         d_power, primary = sum(unit_strength(world, u) for u in units), "fleet"
     else:
         d_power, primary = _defence_power(world, att, nd, units, victim)
-    a_power = unit_strength(world, att) * _matchup(att, primary, nd)
-    if a_power + d_power <= 0:
-        return 1.0
-    return a_power / (a_power + d_power)
+    a_strength = unit_strength(world, att)
+    matchup = _matchup(att, primary, nd)
+    a_power = a_strength * matchup
+    share = a_power / (a_power + d_power) if a_power + d_power > 0 else 1.0
+    return {
+        "attacker": {
+            "name": rules.UNITS[att.kind].name,
+            "hands": att.hands,
+            "strength": a_strength,
+            "cohesion": att.cohesion,
+        },
+        "matchup": matchup,
+        "against": rules.UNITS[primary].name if primary in rules.UNITS else primary,
+        "a_power": a_power,
+        "defenders": listed,
+        "levy_hands": levy_hands,
+        "levy": rules.SETTLED_LEVY * levy_hands,
+        "no_levy": no_levy,
+        "terrain": terrain,
+        "terrain_name": "open water" if fleet else nd.t.name,
+        "forts": forts,
+        "fort_mult": fort_mult,
+        "d_power": d_power,
+        "share": share,
+        "siege_turns": rules.SIEGE_TURNS_PER_FORT * forts
+        if forts and nd.owner is not None and victim is None
+        else 0,
+        "luck": rules.BATTLE_LUCK,
+    }
 
 
 # --- war state --------------------------------------------------------------------------------
