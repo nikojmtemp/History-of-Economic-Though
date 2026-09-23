@@ -194,8 +194,10 @@ def _work_jobs(
         boost = rules.PATENT_BOOST if n.counters.get(f"patent:{nd.id}", 0.0) >= world.turn else 1.0
         per = {g: q * prod * boost for g, q in per.items()}
         value = sum(q * (n.prices[g] if g in n.prices else 1.0) for g, q in per.items())
-        if w == "pasture":
-            value += rules.HERD_GROWTH * rules.HERDS_PER_HERDSMAN * rules.HERD_VALUE
+        if w == "pasture":  # the herd grows, while the grazing has room for it
+            cap = rules.HERD_CAP_PER_GRAZING * nd.t.grazing
+            room = clamp(1.0 - nd.herds / cap, 0.0, 1.0) if cap > 0 else 0.0
+            value += rules.HERD_GROWTH * rules.HERDS_PER_HERDSMAN * rules.HERD_VALUE * room
         out.append((w, jobs, per, value))
     return out
 

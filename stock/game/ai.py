@@ -240,7 +240,7 @@ def _rebuild(world: World, n: Nation, r: float) -> tuple[float, str, str] | None
     nd = world.nodes[best[1]]
     rows = {w: v for w, _jobs, _per, v in economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0)))}
     poorest = min(
-        (w for w in nd.works if w not in ("market", "port", "fort", "academy", "manufactory")),
+        (w for w in actions.replaceable(n, nd) if w != "manufactory"),
         key=lambda w: rows.get(w, 0.0),
         default=None,
     )

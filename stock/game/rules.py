@@ -183,7 +183,7 @@ WORKS: dict[str, Work] = {
             "Manufactory",
             "division",
             4,
-            60.0,
+            40.0,
             {"wares": 1.0},
             "stock",
             dol=1.0,
@@ -256,6 +256,8 @@ AUTO_INVEST_PER_TURN = 2
 REINVEST_TECH = "commutation"  # land that can be sold can be put to a new use
 REINVEST_FACTOR = 2.0  # investors replace a work only for one paying at least this many times as much
 NEVER_REPLACED = ("market", "port")  # trade towns are kept whatever they earn
+FOOD_WORKS = ("fields", "pasture", "port")
+FOOD_SPARE = 1.15  # food made over food eaten before a food work may be pulled down for another
 SECURITY_BASE = 0.55  # the share of savings that becomes Stock with no justice, forts or free institutions
 LABOUR_SAVE_ABOVE = 1.2  # labour saves only from income above this many baskets per head
 COMFORT_NEED = {"labour": 0.5, "proprietors": 1.0, "stock": 1.0}

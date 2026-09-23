@@ -77,24 +77,27 @@ def hostile_at(world: World, n: Nation, node_id: str) -> bool:
     return world.hostile_owner(n.id, nd) or any(world.hostile(u, n.id) for u in world.units_at(node_id))
 
 
-def expected_return(world: World, n: Nation, nd: Node, work: str) -> float:
-    """Profit per unit of stock a new work would earn at today's prices (§9.6)."""
+def _surplus(world: World, n: Nation, nd: Node) -> float:
+    """What the town's works earn above wages, at today's prices."""
 
-    w = rules.WORKS[work]
-    if w.jobs == 0:
+    wage = float(n.last.get("wage", n.prices["food"]))
+    rows = economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0)))
+    return sum(jobs * (value - wage) for _w, jobs, _per, value in rows)
+
+
+def expected_return(world: World, n: Nation, nd: Node, work: str) -> float:
+    """Profit per unit of stock a new work would earn at today's prices (§9.6): what it adds
+    to the town's surplus, so a pasture with no herds left to tend adds nothing."""
+
+    if rules.WORKS[work].jobs == 0:
         return 0.0
+    before = _surplus(world, n, nd)
     nd.works.append(work)
     try:
-        rows = economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0)))
+        after = _surplus(world, n, nd)
     finally:
         nd.works.pop()
-    row = next((r for r in reversed(rows) if r[0] == work), None)
-    if row is None:
-        return 0.0
-    _w, jobs, _per, value_per_job = row
-    wage = float(n.last.get("wage", n.prices["food"]))
-    surplus = jobs * (value_per_job - wage)
-    ret = surplus / max(work_cost(n, work), 1.0)
+    ret = (after - before) / max(work_cost(n, work), 1.0)
     if work in ("market", "port"):
         ret += rules.TRADE_TOWN_PREMIUM  # the trade a town draws: routes, a wider market
     return ret
@@ -719,14 +722,44 @@ def _investors_choose(world: World, n: Nation, r: float) -> None:
 
 
 def work_return(world: World, n: Nation, nd: Node, work: str) -> float:
-    """What a standing work earns per unit of the stock in it; its poorest instance, if several.
-    A work with no hands to employ (a pasture without herds) earns nothing."""
+    """What one standing work adds to its town's surplus, per unit of the stock in it: what
+    would be lost if it were pulled down. A pasture with no herds to tend earns nothing."""
 
-    wage = float(n.last.get("wage", n.prices["food"]))
-    rows = [r for r in economy._work_jobs(world, n, nd, float(n.last.get("dol", 1.0))) if r[0] == work]
-    if not rows:
+    if work not in nd.works:
         return 0.0
-    return min(jobs * (value - wage) for _w, jobs, _per, value in rows) / max(work_cost(n, work), 1.0)
+    before = _surplus(world, n, nd)
+    i = len(nd.works) - 1 - nd.works[::-1].index(work)
+    nd.works.pop(i)
+    try:
+        after = _surplus(world, n, nd)
+    finally:
+        nd.works.insert(i, work)
+    ret = (before - after) / max(work_cost(n, work), 1.0)
+    if work in ("market", "port"):
+        ret += rules.TRADE_TOWN_PREMIUM
+    return ret
+
+
+def food_to_spare(n: Nation) -> bool:
+    """Whether a food work could be pulled down without hunger: we made enough and more."""
+
+    made = float(n.last.get("made", {}).get("food", 0.0))
+    eaten = float(n.last.get("consumed", {}).get("food", 0.0))
+    return eaten > 0 and made >= rules.FOOD_SPARE * eaten
+
+
+def replaceable(n: Nation, nd: Node) -> list[str]:
+    """The works investors may pull down: private ones, trade towns kept, and food works
+    only while the people has food to spare."""
+
+    spare = food_to_spare(n)
+    return [
+        w
+        for w in set(nd.works)
+        if not rules.WORKS[w].public
+        and w not in rules.NEVER_REPLACED
+        and (spare or w not in rules.FOOD_WORKS)
+    ]
 
 
 def best_replacement(world: World, n: Nation, r: float) -> tuple[float, Node, str, str, float] | None:
@@ -737,7 +770,7 @@ def best_replacement(world: World, n: Nation, r: float) -> tuple[float, Node, st
     for nd in world.nodes_of(n.id):
         if len(nd.works) + queued_on(n, nd.id) < nd.slots():
             continue
-        candidates = [w for w in set(nd.works) if not rules.WORKS[w].public and w not in rules.NEVER_REPLACED]
+        candidates = replaceable(n, nd)
         if not candidates:
             continue
         old = min(candidates, key=lambda w: work_return(world, n, nd, w))

@@ -328,6 +328,8 @@ Migration between markets, including emigration to foreign nations with open rou
 - **Security** turns savings into Stock: `Stock += savings × Security`. The rest is **hoarded**. Hoards are shown and can be plundered, but they build nothing.
 - **The rate of profit** falls as Stock grows relative to open opportunities: `r = r0 × sqrt(opportunities / Stock)`, clamped between 0.03 and 0.25. Here, opportunities is the combined value of Works the market could profitably support.
 
+**Expected return** is what a work would add to its town's surplus (output valued at today's prices, less wages) per unit of Stock it costs. It is the town's surplus with the work less the town's surplus without it, so a work that would find nothing to do (a fourth pasture with no herds left to tend) returns nothing. A pasture's herd growth counts only while the grazing has room for more. What a standing work earns is measured the same way: what the town would lose if it were pulled down.
+
 **The investment queue: steering the invisible hand.** The player queues Works on nodes. When Stock covers the cost of the item at the top of the queue, it gets built. Before building, each item is checked for **expected return**:
 
 - **If the return is at or above `r`**, private stock builds it. It costs only Stock, and a ✓ appears in the queue.
@@ -339,7 +341,7 @@ Pre-state, there is no Treasury, so there are no bounties. A chiefdom can only i
 
 **Investors choose.** Once **Coinage** is known, the player may leave investment to the Stock-holders (a switch on the Settlements screen, off by default). Each turn, once the player's own queue is served (nothing in it is waiting for Stock), investors build the private work with the best expected return at or above `r`, anywhere the nation holds, up to 2 a turn. They always keep 10 Stock in hand. They never pay bounties or build public works; the player's queue always comes first.
 
-**Capital moves.** Once **Commutation** is also known (land can be sold, so it can be put to a new use), investors facing a town with no free slot may pull down its poorest-paying private work (a pasture with no herds to tend earns nothing) and build in its place a work whose expected return beats `r` and is at least twice the old one's. One such replacement a turn; market towns and ports are never pulled down.
+**Capital moves.** Once **Commutation** is also known (land can be sold, so it can be put to a new use), investors facing a town with no free slot may pull down its poorest-paying private work (a pasture with no herds to tend earns nothing) and build in its place a work whose expected return beats `r` and is at least twice the old one's. One such replacement a turn; market towns and ports are never pulled down. Food works (fields, pastures, ports) are pulled down only while the people made at least 15% more food than it ate last turn, so capital moving to manufactures never starves the country; the AI keeps the same rule.
 
 **Demolish.** A work can be pulled down to free its slot; nothing is refunded. This is how a manufactory replaces the workshops of a town that has no room left.
 
@@ -924,7 +926,7 @@ These are starting values for tuning, not commitments.
 | Fields | 3 jobs, 1.4 Food/job × arable |
 | Workshop | 2 jobs, 0.8 Wares/job (or 0.3 Luxuries/job on a rare node) |
 | Manufactory | 4 jobs, 1.0 Wares/job × DoL |
-| Work costs (Stock) | Pasture 5 (plus herds) · Fields 10 · Workshop 15 · Market Town 25 · Port 30 · Mine 25 · Manufactory 60 · Foundry 40 · Bank 50 |
+| Work costs (Stock) | Pasture 5 (plus herds) · Fields 10 · Workshop 15 · Market Town 25 · Port 30 · Mine 25 · Manufactory 40 · Foundry 40 · Bank 50 |
 | Public work costs (Treasury) | Road 10/edge · Fort 20/level · Academy 30 · Canal 40/edge |
 | Subsistence | 1 Food per hand per turn |
 | Base rate of profit `r0` | 0.12 |

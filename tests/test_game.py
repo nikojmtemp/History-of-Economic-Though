@@ -376,6 +376,8 @@ def _full_town_with_an_idle_pasture() -> tuple[World, str, Any]:
     node.herds = 0.0  # its pastures have nothing to tend: they earn nothing
     node.works = ["pasture"] * node.slots()
     n.stock = 100.0
+    n.last["made"] = {"food": 30.0}  # food to spare: a food work may go
+    n.last["consumed"] = {"food": 20.0}
     return w, me, node
 
 
@@ -398,3 +400,22 @@ def test_investors_keep_trade_towns_and_works_that_pay() -> None:
     node.works = ["market"] * node.slots()
     actions.process_build_queue(w, n)
     assert node.works == ["market"] * node.slots()
+
+
+def test_no_food_work_is_pulled_down_without_food_to_spare() -> None:
+    w, me, node = _full_town_with_an_idle_pasture()
+    n = w.nations[me]
+    n.known.append(rules.REINVEST_TECH)
+    n.last["made"] = {"food": 21.0}
+    actions.process_build_queue(w, n)
+    assert node.works == ["pasture"] * node.slots()
+
+
+def test_a_pasture_with_no_herds_to_tend_returns_nothing() -> None:
+    w, me, node = _investing_town()
+    n = w.nations[me]
+    n.known.append("taming")
+    node.works = ["pasture"]
+    node.herds = 10.0  # one herdsman's worth: the standing pasture employs him
+    assert actions.expected_return(w, n, node, "pasture") == 0.0
+    assert actions.work_return(w, n, node, "pasture") > 0.0
