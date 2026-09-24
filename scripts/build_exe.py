@@ -15,6 +15,8 @@ content, so a new icon shows at once instead of Windows' cached old one.
 With `--installer`, it also writes `dist/Stock-Setup.exe`, an install wizard with the app
 compressed inside it (`scripts/setup_wizard.py`), and `dist/Stock-Setup.zip` holding it.
 
+The Mac version is built from `mac/` (`mac/build_mac.py`), which uses `build()` here.
+
 `stock/server.py` locates the UI relative to its own `__file__`, which PyInstaller resolves
 inside the bundle, so no path in the package changes when frozen. Build scratch goes to
 `.pyinstaller/` (never `build/`).
@@ -30,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from collections.abc import Sequence
 from pathlib import Path
 
 import PyInstaller.__main__
@@ -47,7 +50,9 @@ choose More info, then Run anyway.
 """
 
 
-def build() -> Path:
+def build(icon: Path = ICON, extra: Sequence[str] = ()) -> Path:
+    """The one-folder app: `dist/Stock/` on Windows, `dist/Stock.app` on a Mac."""
+
     sep = os.pathsep
     PyInstaller.__main__.run(
         [
@@ -59,7 +64,7 @@ def build() -> Path:
             "--noconfirm",
             "--clean",
             "--icon",
-            str(ICON),
+            str(icon),
             "--paths",
             str(ROOT),
             "--distpath",
@@ -87,9 +92,10 @@ def build() -> Path:
             "pytest",
             "--exclude-module",
             "mypy",
+            *extra,
         ]
     )
-    return ROOT / "dist" / "Stock"
+    return ROOT / "dist" / ("Stock.app" if sys.platform == "darwin" else "Stock")
 
 
 def desktop_folder() -> Path:
@@ -214,6 +220,8 @@ def installer(app: Path) -> tuple[Path, Path]:
 
 
 def main() -> None:
+    if sys.platform == "darwin":
+        sys.exit("On a Mac, build with mac/build_mac.py")
     app = build()
     if "--desktop" in sys.argv[1:]:
         print(f"Shortcut: {install(app)}")

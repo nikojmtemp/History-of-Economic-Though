@@ -1,0 +1,52 @@
+# Builds Stock for Windows and the Mac on GitHub's machines (PyInstaller cannot
+# cross-build: each app is made on its own system). Run it from the Actions tab
+# ("Run workflow"), or push a tag like v1.0. The downloads appear under the run's
+# Artifacts: Stock-Windows (Stock-Setup.zip) and Stock-Mac (Stock.dmg).
+
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e . pytest httpx
+      - run: python -m pytest -q
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[exe]"
+      - run: python scripts/build_exe.py --installer
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stock-Windows
+          path: dist/Stock-Setup.zip
+
+  mac:
+    needs: test
+    runs-on: macos-latest  # Apple silicon (M1 and later)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[exe]"
+      - run: python mac/build_mac.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Stock-Mac
+          path: dist/Stock.dmg

@@ -6,8 +6,8 @@ After James Tassie's paste medallion of 1787, the best-known likeness of Smith: 
 profile in white relief on a coloured ground, here in a gold rim. (His neckcloth was
 what the age called a stock.)
 
-Writes `scripts/stock.ico` (the application icon, 16-256 px) and `stock/web/icon.png`
-(the page's favicon). Drawn at 1024 px and scaled down, so every size stays crisp.
+Writes `scripts/stock.ico` (the Windows icon, 16-256 px), `mac/stock.icns` (the Mac
+icon) and `stock/web/icon.png` (the page's favicon). Drawn at 1024 px and scaled down, so every size stays crisp.
 Needs Pillow (a build tool only; the game does not import it).
 """
 
@@ -189,6 +189,7 @@ def main() -> None:
         sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)],
         bitmap_format="bmp",
     )
+    img.save(ROOT / "mac" / "stock.icns")  # the Mac app's icon, every size from one drawing
     img.resize((256, 256), Image.Resampling.LANCZOS).save(ROOT / "stock" / "web" / "icon.png")
     img.resize((512, 512), Image.Resampling.LANCZOS).save(ROOT / ".pyinstaller" / "icon-preview.png")
 

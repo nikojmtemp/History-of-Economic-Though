@@ -58,7 +58,10 @@ def running_stock(port: int = PREFERRED_PORT) -> bool:
 def log_to_file() -> None:
     """A windowed app has no console: keep what it would print in a log instead."""
 
-    folder = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Stock")
+    if sys.platform == "darwin":
+        folder = os.path.expanduser("~/Library/Logs/Stock")
+    else:
+        folder = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Stock")
     os.makedirs(folder, exist_ok=True)
     log = open(os.path.join(folder, "stock.log"), "a", encoding="utf-8", buffering=1)  # noqa: SIM115
     sys.stdout = sys.stderr = log
@@ -124,7 +127,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    if sys.stdout is None:  # a windowed build
+    if sys.stdout is None or (FROZEN and sys.platform == "darwin"):  # a windowed build: no console
         log_to_file()
     args = parse_args(argv)
     if args.port is None and not args.no_browser and running_stock():

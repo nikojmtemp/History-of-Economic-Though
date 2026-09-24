@@ -23,6 +23,8 @@ Builds a windowed app in `dist/Stock/`. With `--desktop` it installs the app to 
 
 `scripts/build_exe.py --installer` also writes **`dist/Stock-Setup.exe`**, an install wizard with the app compressed inside it, and **`dist/Stock-Setup.zip`** holding it, for sending by email. The wizard (`scripts/setup_wizard.py`) installs for the current user without administrator rights. It asks for a folder, a desktop icon, a Start menu entry and whether to launch at the end, and it registers an uninstaller in Windows' Apps & features. `Stock-Setup.exe --silent [--dir PATH]` installs without a window.
 
+**For the Mac**, everything is in [`mac/`](mac/README.md). On a Mac, double-click `mac/play.command` to play from the source, or `mac/build.command` to build `dist/Stock.app` and `dist/Stock.dmg`. Without a Mac, the **Build** workflow (`.github/workflows/build.yml`) builds both the Windows installer and the Mac disk image on GitHub.
+
 ## Check
 
 ```bash
