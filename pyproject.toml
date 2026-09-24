@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = ["numpy", "pyyaml", "fastapi", "uvicorn[standard]", "pydantic", "websockets"]
 
 [project.optional-dependencies]
-exe = ["pyinstaller"]  # scripts/build_exe.py
+exe = ["pyinstaller", "pillow"]  # scripts/build_exe.py; pillow draws the icon (scripts/make_icon.py)
 
 [project.scripts]
 stock = "stock.launch:main"  # `stock` on the PATH after `pip install .`: serve + open the browser

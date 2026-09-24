@@ -55,3 +55,23 @@ def test_a_regent_rules_for_a_while() -> None:
     s = c.post("/regent", json={"turns": 5}).json()
     assert s["turn"] == 6 and not s["me"]["decisions"]
     assert "routes" in s and "trade" in s["me"]
+
+
+def test_the_heartbeat_names_the_game_and_keeps_it_alive() -> None:
+    app = create_app("random:7")
+    c = TestClient(app)
+    app.state.last_seen = 0.0
+    assert c.get("/alive").json()["app"] == "stock"
+    assert app.state.last_seen > 0.0
+
+
+def test_an_idle_app_stops_its_server() -> None:
+    from types import SimpleNamespace
+
+    from stock import launch
+
+    app = create_app("random:7")
+    app.state.last_seen = -1000.0
+    server = SimpleNamespace(should_exit=False)
+    launch.quit_when_idle(server, app, idle=0.2)
+    assert server.should_exit

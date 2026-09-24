@@ -948,6 +948,9 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+// a heartbeat: the application quits itself a while after the last page is closed
+setInterval(() => fetch("/alive").catch(() => {}), 30000);
+
 api("/state").then((s) => {
   if (!s) return;
   const mine = s.units.find((u) => u.nation === s.me.id);

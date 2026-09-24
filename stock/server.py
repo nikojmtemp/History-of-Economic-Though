@@ -13,6 +13,7 @@ POST /new              a new world: {"spec": "random:SEED:NODES:NATIONS"} or {} 
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,18 @@ def create_app(spec: str | None = None) -> FastAPI:
     app = FastAPI(title="Stock")
     game = Game(spec)
     app.state.game = game
+    app.state.last_seen = time.monotonic()  # the launcher quits when no page has called for a while
+
+    @app.middleware("http")
+    async def seen(request: Any, call_next: Any) -> Any:
+        app.state.last_seen = time.monotonic()
+        return await call_next(request)
+
+    @app.get("/alive")
+    def alive() -> dict[str, Any]:
+        """The page's heartbeat; also how a second launch knows Stock is already running."""
+
+        return {"app": "stock", "turn": game.world.turn}
 
     @app.get("/")
     def index() -> HTMLResponse:

@@ -11,6 +11,16 @@ A turn-based civ-lite about Adam Smith's four stages. The design is in
 
 Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:NATIONS` replays a world.
 
+## Package
+
+```bash
+.venv/Scripts/python.exe -m pip install pyinstaller pillow
+.venv/Scripts/python.exe scripts/make_icon.py
+.venv/Scripts/python.exe scripts/build_exe.py --desktop
+```
+
+Builds a windowed app in `dist/Stock/`. With `--desktop` it installs the app to `%LOCALAPPDATA%\Programs\Stock` and puts a **Stock** shortcut with the logo on the desktop. Double-clicking opens the game in the default browser, with no console window. The app quits by itself three minutes after the last game tab is closed, and launching it again while it runs reopens the same game. What it would print goes to `%LOCALAPPDATA%\Stock\stock.log`.
+
 ## Check
 
 ```bash
