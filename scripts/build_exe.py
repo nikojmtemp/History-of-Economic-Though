@@ -9,7 +9,8 @@ minutes after the last page is closed (`stock/launch.py`). The icon is `scripts/
 (`scripts/make_icon.py` draws it).
 
 With `--desktop`, the app is copied to `%LOCALAPPDATA%/Programs/Stock` and a `Stock`
-shortcut, with its icon, is put on the desktop.
+shortcut, with its icon, is put on the desktop. The shortcut's icon file is named for its
+content, so a new icon shows at once instead of Windows' cached old one.
 
 `stock/server.py` locates the UI relative to its own `__file__`, which PyInstaller resolves
 inside the bundle, so no path in the package changes when frozen. Build scratch goes to
@@ -18,6 +19,9 @@ inside the bundle, so no path in the package changes when frozen. Build scratch 
 
 from __future__ import annotations
 
+import ctypes
+import filecmp
+import hashlib
 import os
 import shutil
 import subprocess
@@ -88,23 +92,64 @@ def desktop_folder() -> Path:
     return Path(out.stdout.strip())
 
 
+def _sync(src: Path, dst: Path) -> None:
+    """Make `dst` a copy of `src`, touching only what changed: Stock may be running from
+    `dst`, and Windows will not let a running program's files be replaced."""
+
+    busy: list[Path] = []
+    wanted = set()
+    for f in src.rglob("*"):
+        if f.is_dir():
+            continue
+        t = dst / f.relative_to(src)
+        wanted.add(t)
+        if t.exists() and filecmp.cmp(f, t, shallow=False):
+            continue
+        t.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(f, t)
+        except PermissionError:
+            busy.append(t)
+    if busy:
+        raise SystemExit(
+            f"Stock is running: close it (and its browser tab) and install again. In use: {busy[0]}"
+        )
+    for t in dst.rglob("*"):  # what the new build no longer has
+        if t.is_file() and t not in wanted and not t.name.startswith("stock-"):
+            t.unlink(missing_ok=True)
+
+
 def install(app: Path) -> Path:
     """Copy the app beside the user's other programs and put a shortcut on the desktop."""
 
     home = Path(os.environ["LOCALAPPDATA"]) / "Programs" / "Stock"
-    if home.exists():
-        shutil.rmtree(home)
-    shutil.copytree(app, home)
+    _sync(app, home)
+    return shortcut(home)
+
+
+def shortcut(home: Path) -> Path:
+    """The desktop shortcut to the installed app, with the current icon."""
+
+    # Windows caches icons by file path, so a rebuilt Stock.exe would keep showing the old
+    # picture: the shortcut points at an .ico named for its content, which is always new
+    digest = hashlib.sha256(ICON.read_bytes()).hexdigest()[:10]
+    icon = home / f"stock-{digest}.ico"
+    for old in home.glob("stock-*.ico"):
+        if old != icon:
+            old.unlink(missing_ok=True)
+    shutil.copyfile(ICON, icon)
     link = desktop_folder() / "Stock.lnk"
+    link.unlink(missing_ok=True)
     exe = home / "Stock.exe"
     script = (
         "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:LINK);"
         "$s.TargetPath = $env:EXE; $s.WorkingDirectory = $env:HOME_DIR;"
-        "$s.IconLocation = $env:EXE + ',0'; $s.Description = 'Stock: Smith''s four stages';"
+        "$s.IconLocation = $env:ICON + ',0'; $s.Description = 'Stock: Smith''s four stages';"
         "$s.Save()"
     )
-    env = {**os.environ, "LINK": str(link), "EXE": str(exe), "HOME_DIR": str(home)}
+    env = {**os.environ, "LINK": str(link), "EXE": str(exe), "HOME_DIR": str(home), "ICON": str(icon)}
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=True)
+    ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)  # SHCNE_ASSOCCHANGED: redraw icons
     return link
 
 

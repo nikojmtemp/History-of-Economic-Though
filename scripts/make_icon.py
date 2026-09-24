@@ -32,17 +32,45 @@ Point = tuple[float, float]
 
 # The profile, facing right, clockwise from the crown (1024 px canvas).
 PROFILE: list[Point] = [
-    (492, 244), (588, 252), (640, 292),  # the crown and the front of the wig
-    (662, 338), (676, 384), (668, 404),  # the forehead, the brow, the bridge of the nose
-    (700, 450), (730, 500), (748, 528), (740, 544),  # the long, strong nose and its tip
-    (712, 546), (706, 562), (716, 574), (700, 584),  # under the nose, the upper lip
-    (712, 596), (694, 612),  # the lower lip, the crease of the chin
-    (708, 640), (696, 668), (664, 688), (632, 696),  # the chin and the jowl
-    (612, 714), (634, 740), (666, 760), (678, 800), (664, 832),  # the throat, the stock and its frill
-    (690, 880), (704, 932),  # the coat
-    (330, 932), (332, 862), (372, 806),  # the back of the coat and the shoulder
-    (420, 752), (446, 716), (404, 694), (366, 664),  # the nape, the queue
-    (330, 604), (314, 530), (320, 446), (350, 360), (408, 284),  # the full back of the wig
+    (492, 244),
+    (588, 252),
+    (640, 292),  # the crown and the front of the wig
+    (662, 338),
+    (676, 384),
+    (668, 404),  # the forehead, the brow, the bridge of the nose
+    (700, 450),
+    (730, 500),
+    (748, 528),
+    (740, 544),  # the long, strong nose and its tip
+    (712, 546),
+    (706, 562),
+    (716, 574),
+    (700, 584),  # under the nose, the upper lip
+    (712, 596),
+    (694, 612),  # the lower lip, the crease of the chin
+    (708, 640),
+    (696, 668),
+    (664, 688),
+    (632, 696),  # the chin and the jowl
+    (612, 714),
+    (634, 740),
+    (666, 760),
+    (678, 800),
+    (664, 832),  # the throat, the stock and its frill
+    (690, 880),
+    (704, 932),  # the coat
+    (330, 932),
+    (332, 862),
+    (372, 806),  # the back of the coat and the shoulder
+    (420, 752),
+    (446, 716),
+    (404, 694),
+    (366, 664),  # the nape, the queue
+    (330, 604),
+    (314, 530),
+    (320, 446),
+    (350, 360),
+    (408, 284),  # the full back of the wig
 ]
 
 
@@ -119,7 +147,9 @@ def draw() -> Image.Image:
     )
     img.paste(Image.new("RGBA", (S, S), (10, 20, 40, 150)), (0, 0), ImageChops.multiply(cast, ground_mask))
     img.paste(Image.new("RGBA", (S, S), RELIEF_SHADE), (0, 0), relief)
-    lit = relief.filter(ImageFilter.GaussianBlur(3)).transform((S, S), Image.Transform.AFFINE, (1, 0, 8, 0, 1, 8))
+    lit = relief.filter(ImageFilter.GaussianBlur(3)).transform(
+        (S, S), Image.Transform.AFFINE, (1, 0, 8, 0, 1, 8)
+    )
     img.paste(Image.new("RGBA", (S, S), RELIEF), (0, 0), ImageChops.multiply(lit, relief))
 
     d = ImageDraw.Draw(img)
@@ -153,7 +183,12 @@ def draw() -> Image.Image:
 
 def main() -> None:
     img = draw()
-    img.save(ROOT / "scripts" / "stock.ico", sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)])
+    # classic bitmaps, not PNG, inside the .ico: every part of Windows can read them
+    img.save(
+        ROOT / "scripts" / "stock.ico",
+        sizes=[(n, n) for n in (16, 24, 32, 48, 64, 128, 256)],
+        bitmap_format="bmp",
+    )
     img.resize((256, 256), Image.Resampling.LANCZOS).save(ROOT / "stock" / "web" / "icon.png")
     img.resize((512, 512), Image.Resampling.LANCZOS).save(ROOT / ".pyinstaller" / "icon-preview.png")
 
