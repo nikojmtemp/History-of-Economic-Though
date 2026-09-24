@@ -961,6 +961,10 @@ A 250-turn game does not fit in one sitting, so nothing the player does is ever 
 - **Named saves.** The **Saves** screen (L) saves the game under a name (the people and turn by default), and lists every save with its people, turn, year, age and when it was saved, to load or delete.
 - Saves live in the player's own folder: `%LOCALAPPDATA%\Stock\saves` on Windows, `~/Library/Application Support/Stock/saves` on the Mac, `~/.local/share/stock/saves` elsewhere. A save from an older build still loads: any field it lacks takes its default.
 
+### 19.11 In the browser
+
+The same game also runs with no server at all, as a static web page (GitHub Pages): the engine is plain Python, and **Pyodide** runs it in the page. Every request the UI makes goes through one service (`stock/service.py`); the desktop app puts it behind HTTP, and the web page calls it directly. Saves go to the browser's own storage (about 70 KB each), so autosave, continue and named saves work the same way. The first visit loads about 10 MB; a turn takes 40 ms early in the game and about 0.25 s late in it. Long requests (the regent, a turn) show a working note first, because the engine holds the page while it works.
+
 ---
 
 ## 20. Starting numbers

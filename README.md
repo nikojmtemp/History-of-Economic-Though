@@ -3,7 +3,11 @@
 A turn-based civ-lite about Adam Smith's four stages. The design is in
 [Stock - Design Document.md](Stock%20-%20Design%20Document.md); section numbers in code (`§9.6`) point there.
 
-## Download
+## Play
+
+**In your browser, with nothing to install:** [play Stock](https://nikojmtemp.github.io/History-of-Economic-Though/). The first visit loads about 10 MB (Python, run in the page); after that it starts at once. Your game is saved in that browser as you play.
+
+**Or download the app:**
 
 | Your computer | Download |
 |---|---|
@@ -11,6 +15,8 @@ A turn-based civ-lite about Adam Smith's four stages. The design is in
 | Mac with Apple silicon (M1 or later) | [**Stock.dmg**](https://github.com/nikojmtemp/History-of-Economic-Though/releases/latest/download/Stock.dmg): open it and drag Stock onto Applications. |
 
 The game opens in your web browser and saves as you play. All versions are on the [Releases](https://github.com/nikojmtemp/History-of-Economic-Though/releases) page. The apps aren't signed with a paid certificate, so the first launch shows a warning: on Windows choose **More info**, then **Run anyway**; on the Mac right-click Stock, choose **Open**, then **Open** again.
+
+The browser version is built by `scripts/build_web.py` and published to GitHub Pages by `.github/workflows/pages.yml` on every push to `master`. To try it locally: `python scripts/build_web.py`, then `python -m http.server -d site 8200` and open http://localhost:8200.
 
 Releases are built by `.github/workflows/build.yml` whenever a version tag is pushed:
 

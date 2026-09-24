@@ -1,0 +1,44 @@
+# Publishes the browser version of Stock (scripts/build_web.py) to GitHub Pages on every
+# push to master: the tests run, the static site is built, and Pages serves it at
+# https://<owner>.github.io/<repository>/. The whole game runs in the visitor's browser
+# (Pyodide), and saves stay in that browser.
+#
+# Once, in the repository's Settings > Pages, set Source to "GitHub Actions". On a free
+# GitHub plan, Pages needs the repository to be public.
+
+name: Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install -e . pytest httpx
+      - run: python -m pytest -q
+      - run: python scripts/build_web.py
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v5

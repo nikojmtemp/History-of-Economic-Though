@@ -23,6 +23,19 @@ const SEAT = { council: "Council", chiefdom: "Chiefdom", civil: "Civil Governmen
 // --- server ------------------------------------------------------------------------
 
 async function api(path, body) {
+  if (window.STOCK_READY) {  // the web build: the engine runs in this page (boot.js)
+    try { await window.STOCK_READY; } catch (e) { return null; }
+    const long = path === "/regent" || path === "/turn" || path === "/new";
+    if (long) {  // the engine holds the page while it works: say so, and let that paint first
+      toast(path === "/regent" ? "The regent rules…" : path === "/new" ? "Making a world…" : "The year turns…", true);
+      document.body.classList.add("busy");
+      await new Promise((res) => setTimeout(res, 30));
+    }
+    let r;
+    try { r = window.STOCK_LOCAL(path, body); } finally { if (long) { document.body.classList.remove("busy"); $("toast").hidden = true; } }
+    if (!r.ok) { toast(r.detail || `Error ${r.status}`); return null; }
+    return r.data;
+  }
   const r = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) { const t = await r.json().catch(() => ({})); toast(t.detail || `Error ${r.status}`); return null; }
   return r.json();
@@ -1025,7 +1038,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 // a heartbeat: the application quits itself a while after the last page is closed
-setInterval(() => fetch("/alive").catch(() => {}), 30000);
+if (!window.STOCK_READY) setInterval(() => fetch("/alive").catch(() => {}), 30000);  // the desktop app only
 
 api("/state").then((s) => {
   if (!s) return;
