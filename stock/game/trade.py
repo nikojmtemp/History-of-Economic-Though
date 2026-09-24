@@ -27,9 +27,18 @@ def presence(world: World, n: Nation) -> set[str]:
 
 
 def update_fog(world: World, n: Nation) -> None:
+    """Add what we now see to what we know; news of new places feeds invention (§5.5)."""
+
     seen = set(n.explored)
-    seen |= visible(world, n)
-    n.explored = sorted(seen)
+    new = visible(world, n) - seen
+    if seen and new:  # not the first look around at the start
+        gain = sum(
+            rules.EXPLORE_FEATURE_INGENUITY if world.nodes[x].features else rules.EXPLORE_INGENUITY
+            for x in new
+        )
+        n.research_progress += gain
+        n.counters["explore_ingenuity"] = n.counters.get("explore_ingenuity", 0.0) + gain
+    n.explored = sorted(seen | new)
 
 
 def visible(world: World, n: Nation) -> set[str]:
@@ -44,6 +53,12 @@ def visible(world: World, n: Nation) -> set[str]:
     for node in eyes:
         vis.add(node)
         vis.update(world.neighbours(node))
+    for u in world.units_of(n.id):
+        if u.kind == "scouts":  # scouts climb and look further
+            ring = {u.node}
+            for _ in range(rules.SCOUT_SIGHT):
+                ring |= {x for node in ring for x in world.neighbours(node)}
+            vis |= ring
     return vis
 
 
@@ -71,7 +86,16 @@ def update_contacts(world: World) -> None:
                 a.relations.setdefault(b.id, 0.0)
                 b.relations.setdefault(a.id, 0.0)
                 for x, y in ((a, b), (b, a)):
-                    world.emit(x.id, "contact", f"First contact with {y.name}.")
+                    x.research_progress += rules.CONTACT_INGENUITY
+                    x.counters["explore_ingenuity"] = (
+                        x.counters.get("explore_ingenuity", 0.0) + rules.CONTACT_INGENUITY
+                    )
+                    world.emit(
+                        x.id,
+                        "contact",
+                        f"First contact with {y.name}: their ways and tools are news to us "
+                        f"(Ingenuity +{rules.CONTACT_INGENUITY:.0f}).",
+                    )
 
 
 # --- routes ------------------------------------------------------------------------------
@@ -490,4 +514,4 @@ def ship_edge_ok(world: World, a: str, b: str) -> bool:
         return False
     if e.kind == "sea":
         return True
-    return world.nodes[a].coast and world.nodes[b].coast and e.kind != "rough"  # coasting
+    return world.nodes[a].coast and world.nodes[b].coast and e.kind not in ("rough", "pass")  # coasting

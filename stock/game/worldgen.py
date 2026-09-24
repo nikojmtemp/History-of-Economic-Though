@@ -180,19 +180,150 @@ def _carve_rivers(
     return rivers
 
 
+# --- ranges and islands --------------------------------------------------------------------
+
+
+def _find(parent: list[int], i: int) -> int:
+    while parent[i] != i:
+        parent[i] = parent[parent[i]]
+        i = parent[i]
+    return i
+
+
+def _components(n: int, pairs: list[tuple[int, int]], among: set[int]) -> list[int]:
+    """Union-find labels over `pairs`, for the nodes in `among`."""
+
+    parent = list(range(n))
+    for i, j in pairs:
+        if i in among and j in among:
+            parent[_find(parent, i)] = _find(parent, j)
+    return [_find(parent, i) for i in range(n)]
+
+
+RIDGE_WIDTH = 0.18  # canvas units either side of a range's line that are mountain
+
+
+def _across(p: tuple[float, float], line: tuple[float, float, float, float], horizontal: bool) -> float:
+    """Signed distance of `p` across a wavy range line (at, amplitude, frequency, phase)."""
+
+    at, amp, freq, phase = line
+    along, across = (p[0], p[1]) if horizontal else (p[1], p[0])
+    return across - (at + amp * math.sin(freq * along + phase))
+
+
+def _ranges(
+    rng: random.Random, points: list[tuple[float, float]], pairs: list[tuple[int, int]], side: int, count: int
+) -> tuple[list[tuple[int, int]], set[int], set[tuple[int, int]]]:
+    """Mountain ranges running inland from the coast, each a wavy line across the land.
+    Every edge crossing a range is cut except the fewest needed to keep the land whole:
+    those become passes, the bottlenecks between regions. Returns the edges kept, the
+    ridge nodes (nodes hard by a range) and the passes."""
+
+    horizontal = side in (0, 1)  # ocean west or east: ranges run west-east, splitting north from south
+    span = CANVAS_H if horizontal else CANVAS_W
+    ridge: set[int] = set()
+    passes: set[tuple[int, int]] = set()
+    kept = list(pairs)
+    n = len(points)
+    for k in range(count):
+        line = (
+            span * (k + 1) / (count + 1) + rng.uniform(-0.12, 0.12) * span,  # where it runs
+            rng.uniform(0.1, 0.3),  # how far it wanders
+            rng.uniform(1.0, 2.2),
+            rng.uniform(0.0, math.tau),
+        )
+        side_of = [_across(p, line, horizontal) for p in points]
+        crossing = [(i, j) for i, j in kept if side_of[i] * side_of[j] < 0]
+        if not crossing:
+            continue
+        land = [e for e in kept if e not in crossing]
+        comp = _components(n, land, set(range(n)))
+        # rejoin the pieces the range split, one pass per pair of pieces, shortest crossings first
+        crossing.sort(key=lambda e: math.dist(points[e[0]], points[e[1]]) + rng.uniform(0.0, 0.3))
+        parent = list(range(n))
+        mine: list[tuple[int, int]] = []
+        for i, j in crossing:
+            a, b = _find(parent, comp[i]), _find(parent, comp[j])
+            if a != b:
+                parent[a] = b
+                mine.append((i, j))
+        land.extend(mine)
+        passes.update(mine)
+        ridge |= {i for i in range(n) if abs(side_of[i]) < RIDGE_WIDTH}
+        kept = land
+    pass_ends = {i for e in passes for i in e}
+    return kept, ridge - pass_ends, passes
+
+
+def _islands(
+    rng: random.Random,
+    points: list[tuple[float, float]],
+    pairs: list[tuple[int, int]],
+    distance: list[float],
+    count: int,
+    keep_out: set[int],
+) -> tuple[list[tuple[int, int]], list[set[int]]]:
+    """Small clusters by the sea, cut off from the mainland: reached only by ship."""
+
+    n = len(points)
+    nb = _neighbours(n, pairs)
+    taken: set[int] = set(keep_out)
+    islands: list[set[int]] = []
+    shore = sorted((i for i in range(n) if distance[i] <= 0.22), key=lambda i: distance[i])
+    rng.shuffle(shore)
+    for seed in shore:
+        if len(islands) >= count:
+            break
+        if seed in taken or any(x in taken for x in nb[seed]):
+            continue
+        size = rng.randint(2, 3)
+        isle = {seed}
+        frontier = [x for x in nb[seed] if distance[x] <= 0.3 and x not in taken]
+        rng.shuffle(frontier)
+        for x in frontier[: size - 1]:
+            isle.add(x)
+        # an island must leave the mainland whole
+        rest = set(range(n)) - isle - {i for s in islands for i in s}
+        mainland = [e for e in pairs if not (set(e) & isle)]
+        comp = _components(n, mainland, rest)
+        if len({comp[i] for i in rest}) > 1:
+            continue
+        islands.append(isle)
+        taken |= isle | {x for i in isle for x in nb[i]}  # islands keep apart
+    kept = [(i, j) for i, j in pairs if _same_island(islands, i, j)]
+    return kept, islands
+
+
+def _same_island(islands: list[set[int]], i: int, j: int) -> bool:
+    for s in islands:
+        if (i in s) != (j in s):
+            return False
+    return True
+
+
 # --- terrain and features ------------------------------------------------------------------
 
 
 def _classify(
-    elevation: list[float], moisture: list[float], distance: list[float], on_river: list[bool]
+    elevation: list[float],
+    moisture: list[float],
+    distance: list[float],
+    on_river: list[bool],
+    ridge: set[int] | None = None,
+    island: set[int] | None = None,
 ) -> list[str]:
+    ridge, island = ridge or set(), island or set()
     n = len(elevation)
-    order = sorted(range(n), key=lambda i: elevation[i], reverse=True)
-    mountain = set(order[: max(1, n // 12)])
-    hills = set(order[max(1, n // 12) : max(2, n // 12 + n // 6)])
+    order = [i for i in sorted(range(n), key=lambda i: elevation[i], reverse=True) if i not in island]
+    peaks = max(0, n // 12 - len(ridge))  # the ranges take most of the mountains
+    mountain = set(ridge) | set(order[:peaks])
+    rest = [i for i in order if i not in mountain]
+    hills = set(rest[: max(1, n // 6)])
     terrain: list[str] = []
     for i in range(n):
-        if distance[i] <= 0.15 and i not in mountain:
+        if i in island:
+            terrain.append("COAST")
+        elif distance[i] <= 0.15 and i not in mountain:
             terrain.append("COAST")
         elif i in mountain:
             terrain.append("MOUNTAIN")
@@ -242,8 +373,14 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
 
     points = _sample_points(rng, n)
     pairs = _gabriel_edges(points)
+    elevation, moisture, distance, side = _relief(rng, points)
+    pairs, ridge, passes = _ranges(rng, points, pairs, side, 1 if n < 55 else 2)
+    for i in ridge:
+        elevation[i] = max(elevation[i], 0.9)  # rivers rise in the mountains
+    pairs, islands = _islands(rng, points, pairs, distance, 1 if n < 55 else 2 if n < 70 else 3, ridge)
+    island = {i for s in islands for i in s}
+    ridge -= island
     nb = _neighbours(n, pairs)
-    elevation, moisture, distance, _side = _relief(rng, points)
     rivers = _carve_rivers(rng, elevation, distance, nb, cfg.rivers)
     on_river = [False] * n
     river_steps: set[tuple[int, int]] = set()
@@ -252,12 +389,17 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
             river_steps.add((min(a, b), max(a, b)))
         for i in path[1:]:
             on_river[i] = True
-    terrain = _classify(elevation, moisture, distance, on_river)
+    terrain = _classify(elevation, moisture, distance, on_river, ridge, island)
     feats = _features(rng, terrain)
+    for isle in islands:  # worth the voyage: something rare on every island
+        if not any("rare" in feats[i] for i in isle):
+            feats[min(isle)].append("rare")
     herd_nodes = [i for i in range(n) if "wild_herds" in feats[i]]
     while len(herd_nodes) < max(3, cfg.nations + 1):
         cands = [
-            i for i in range(n) if terrain[i] in ("GRASSLAND", "HILLS", "VALLEY") and i not in herd_nodes
+            i
+            for i in range(n)
+            if terrain[i] in ("GRASSLAND", "HILLS", "VALLEY") and i not in herd_nodes and i not in island
         ]
         i = rng.choice(cands or [k for k in range(n) if k not in herd_nodes])
         feats[i].append("wild_herds")
@@ -283,18 +425,32 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
     edges: list[Edge] = []
     for i, j in pairs:
         rough = rules.TERRAIN[terrain[i]].rough or rules.TERRAIN[terrain[j]].rough
-        kind = "river" if (i, j) in river_steps else "rough" if rough else "path"
+        kind = (
+            "pass" if (i, j) in passes else "river" if (i, j) in river_steps else "rough" if rough else "path"
+        )
         edges.append(Edge(ids[i], ids[j], kind))
     # sea lanes: each coast to its two nearest coasts not already joined by land
     coasts = [i for i in range(n) if terrain[i] == "COAST"]
     joined = {(min(i, j), max(i, j)) for i, j in pairs}
+
+    def lane(i: int, c: int) -> None:
+        key = (min(i, c), max(i, c))
+        if key not in joined:
+            joined.add(key)
+            edges.append(Edge(ids[key[0]], ids[key[1]], "sea"))
+
     for i in coasts:
         near = sorted((c for c in coasts if c != i), key=lambda c: math.dist(points[i], points[c]))[:2]
         for c in near:
-            key = (min(i, c), max(i, c))
-            if key not in joined and math.dist(points[i], points[c]) < 1.6:
-                joined.add(key)
-                edges.append(Edge(ids[key[0]], ids[key[1]], "sea"))
+            if math.dist(points[i], points[c]) < 1.6:
+                lane(i, c)
+    for isle in islands:  # every island has a lane to the mainland
+        shore = [c for c in coasts if c not in island]
+        if shore:
+            i, c = min(
+                ((i, c) for i in isle for c in shore), key=lambda ic: math.dist(points[ic[0]], points[ic[1]])
+            )
+            lane(i, c)
 
     # starts: habitable game nodes near wild herds or arable ground, spread apart
     def score(i: int) -> float:
@@ -304,13 +460,17 @@ def generate(config: WorldGenConfig | None = None, **overrides: int) -> World:
         return rules.TERRAIN[terrain[i]].game + 0.4 * herds + 0.3 * arable
 
     habitable = [
-        i for i in range(n) if not rules.TERRAIN[terrain[i]].rough and rules.TERRAIN[terrain[i]].game >= 0.6
+        i
+        for i in range(n)
+        if not rules.TERRAIN[terrain[i]].rough and rules.TERRAIN[terrain[i]].game >= 0.6 and i not in island
     ]
     habitable.sort(key=score, reverse=True)
     good = habitable[: max(cfg.nations * 3, len(habitable) // 2)] or list(range(n))
     starts = [good[0]]
     while len(starts) < cfg.nations:
-        pool = [i for i in good if i not in starts] or [i for i in range(n) if i not in starts]
+        pool = [i for i in good if i not in starts] or [
+            i for i in range(n) if i not in starts and i not in island
+        ]
         starts.append(max(pool, key=lambda i: min(math.dist(points[i], points[s]) for s in starts)))
 
     # every people can find wild herds within two steps of home (§5.4)

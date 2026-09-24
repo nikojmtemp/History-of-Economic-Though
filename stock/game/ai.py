@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import deque
 
 from stock.game import actions, economy, finance, military, research, rules, trade
-from stock.game.state import Nation, Unit, World
+from stock.game.state import Nation, Node, Unit, World
 
 
 def personality(n: Nation) -> str:
@@ -107,9 +107,58 @@ def _settle_target(world: World, n: Nation, u: Unit, radius: int = 3) -> str | N
     return best
 
 
+SCOUTS_FROM_TURN = 10
+
+
+def _frontier_step(world: World, n: Nation, u: Unit) -> str | None:
+    """The first step toward the nearest place with unknown country beside it."""
+
+    known = set(n.explored)
+    prev: dict[str, str | None] = {u.node: None}
+    q = deque([u.node])
+    while q:
+        cur = q.popleft()
+        if cur != u.node and any(x not in known for x in world.neighbours(cur)):
+            step = cur
+            while prev[step] != u.node:
+                step = prev[step]  # type: ignore[assignment]
+            return step
+        for nxt in world.neighbours(cur):
+            if nxt in prev or actions.hostile_at(world, n, nxt):
+                continue
+            prev[nxt] = cur
+            q.append(nxt)
+    return None
+
+
+def _scouts(world: World, n: Nation) -> None:
+    """One party of scouts at a time, while there is country left to see."""
+
+    scouts = [u for u in world.units_of(n.id) if u.kind == "scouts"]
+    if not scouts and world.turn >= SCOUTS_FROM_TURN:
+        sources: list[Node | Unit] = [
+            *world.nodes_of(n.id),
+            *(x for x in world.units_of(n.id) if x.kind == "band"),
+        ]
+        for src in sorted(sources, key=lambda x: -x.hands):
+            if military.raise_blocker(world, n, src, "scouts") is None:
+                where = {"node": src.id} if isinstance(src, Node) else {"unit": src.id}
+                _do(world, n, {"kind": "raise_unit", "unit_kind": "scouts", **where})
+                break
+        return  # raised scouts set out next turn
+    for u in scouts:
+        for _ in range(u.max_moves(set(n.known))):
+            step = _frontier_step(world, n, u)
+            if step is None:
+                _do(world, n, {"kind": "disband", "unit": u.id})  # nothing left to find: home
+                break
+            if not _do(world, n, {"kind": "move", "unit": u.id, "to": step}):
+                break
+
+
 def _units(world: World, n: Nation, style: str) -> None:
     for u in list(world.units_of(n.id)):
-        if u.id not in world.units or u.military or u.kind in ("caravan", "merchantman"):
+        if u.id not in world.units or u.military or u.kind in ("caravan", "merchantman", "scouts"):
             continue
         nd = world.nodes[u.node]
         # tame when standing on wild herds (khans and wanderers readily; others if pressed)
@@ -775,6 +824,7 @@ def take_turn(world: World, n: Nation) -> None:
     _fleets(world, n, style)
     _treaties(world, n, style)
     _units(world, n, style)
+    _scouts(world, n)
     _trade(world, n)
     _builds(world, n)
     _expand(world, n)

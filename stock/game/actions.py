@@ -56,13 +56,13 @@ def move_cost(world: World, u: Unit, to: str) -> int | None:
     if trade.naval(u):
         return 1 if trade.ship_edge_ok(world, u.node, to) else None
     if e.kind == "sea":
-        # colonists: a band at its own port may take ship, once the people knows Navigation
+        # settlers: a band at its own port may take ship, once the people knows Sail
         here = world.nodes[u.node]
         n = world.nations[u.nation]
-        if u.kind == "band" and here.owner == u.nation and "port" in here.works and n.knows("navigation"):
+        if u.kind == "band" and here.owner == u.nation and "port" in here.works and n.knows("sail"):
             return 1
         return None
-    return e.cost()
+    return 1 if u.kind == "scouts" else e.cost()  # scouts climb as easily as they walk
 
 
 def can_enter(world: World, n: Nation, node_id: str) -> bool:
@@ -152,6 +152,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         u = _unit(world, n, a)
         if u is None:
             return "no such unit"
+        if u.kind == "scouts" and kind != "move":
+            return "scouts only look: disband them to bring the hands home"
         nd = world.nodes[u.node]
         if kind == "move":
             to = str(a.get("to", ""))
@@ -169,6 +171,8 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
                 if owner not in (None, n.id) and trade.embargoed(world, n.id, owner):
                     return "under embargo"
                 return None  # merchants are welcome in peacetime
+            if u.kind == "scouts":
+                return None  # travellers pass through in peacetime
             if not can_enter(world, n, to):
                 return "settled by another people: at peace, you may not enter"
             return None
@@ -360,7 +364,7 @@ def _check_war(world: World, n: Nation, a: Action) -> str | None:
         return military.raise_blocker(world, n, src, str(a.get("unit_kind", "")))
     if kind in ("disband", "upgrade", "raid"):
         u = _unit(world, n, a)
-        if u is None or not (u.military or kind == "raid"):
+        if u is None or not (u.military or kind == "raid" or (kind == "disband" and u.kind == "scouts")):
             return "no such army"
         if kind == "upgrade":
             return military.upgrade_blocker(world, n, u)

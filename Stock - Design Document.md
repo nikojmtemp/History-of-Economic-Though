@@ -141,9 +141,16 @@ The map is a **graph of 40–80 nodes** (60 by default; a bigger world is spread
 |---|---|---|
 | Path | 1 | Only once a Road is built |
 | Rough path (marsh, mountain) | 2 | Never, not even with a Road |
+| Mountain pass | 2 | Never |
 | River | 1 | Yes, always |
 | Road (built on a path) | 1, +1 bonus move for regiments | Yes |
-| Sea lane (coast to coast) | Needs Sail, 1 for fleets | Yes, once both ends have a Port |
+| Sea lane (coast to coast) | Ships; a band at its own Port once Sail is known | Yes, once both ends have a Port |
+
+### 5.2a Ranges, passes and islands
+
+The map is not an even mesh. **Mountain ranges** (one on small maps, two from 55 nodes) run inland from the coast as wavy lines, and every land edge crossing a range is cut, except the fewest needed to keep the mainland whole. Those become **passes**: the only ways over, costing 2 moves. They are the bottlenecks between regions, the places worth a fort, and the reason a coastal people may go round by sea. The ground along a range is mountain, rich in ore.
+
+**Islands** (1–3 clusters of 2–3 coast nodes) are cut off from the mainland entirely and reached only by sea lanes. Each holds a rare resource. A band can take ship from its own Port once its people knows **Sail**. No people starts on an island.
 
 ### 5.3 Fog and contact
 
@@ -152,6 +159,12 @@ You see your own nodes and everything within one edge of them, plus the endpoint
 ### 5.4 The start
 
 Each nation starts with one **Band** of 5 hands on a node that has game, near a node with wild herds or arable land. Starting positions are spread apart so that first contact happens around turns 5–12. Everything else starts unclaimed.
+
+### 5.5 Exploration and scouts
+
+What is learned of the world feeds invention, as travellers' tales fed Smith's "philosophers or men of speculation". Each place first seen adds **0.75 Ingenuity**, a place with ore, coal, rare goods or wild herds **2.5**, and each people met for the first time **8**. (The very first look around at the start pays nothing.)
+
+**Scouts** are a unit of 1 hand, raised from any settlement or band. They move 3, cross mountains and passes at the cost of plain ground, pass through other peoples' open country in peacetime, and see two steps around them. They cannot fight, settle, split or merge; disbanding them brings the hand home. The AI sends one party of scouts from turn 10 while unknown country remains within reach, and calls it home when none does.
 
 ---
 

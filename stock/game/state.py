@@ -59,13 +59,13 @@ class Node:
 class Edge:
     a: str
     b: str
-    kind: str  # path | rough | river | road | sea
+    kind: str  # path | rough | pass | river | road | sea
 
     def other(self, node_id: str) -> str:
         return self.b if node_id == self.a else self.a
 
     def cost(self) -> int:
-        return 2 if self.kind == "rough" else 1
+        return 2 if self.kind in ("rough", "pass") else 1
 
 
 @dataclass

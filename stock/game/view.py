@@ -50,7 +50,12 @@ def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
     for e in world.edges_of(u.node):
         to = e.other(u.node)
         why = actions.check(world, n, {"kind": "move", "unit": u.id, "to": to})
-        m: dict[str, Any] = {"to": to, "ok": why is None, "why": why, "cost": e.cost()}
+        m: dict[str, Any] = {
+            "to": to,
+            "ok": why is None,
+            "why": why,
+            "cost": actions.move_cost(world, u, to) or e.cost(),
+        }
         if why is None and actions.hostile_at(world, n, to):
             b = military.odds_breakdown(world, u, world.nodes[to])
             m["attack"] = _r(b["share"])
@@ -73,7 +78,7 @@ def _unit(world: World, n: Nation, u: Unit) -> dict[str, Any]:
                 raids.append({"to": to, "victim": victim, "odds": _r(b["share"]), "breakdown": _rounded(b)})
     raise_opts = []
     if not t.military:
-        for kind in ("warband", "riders"):
+        for kind in ("scouts", "warband", "riders"):
             raise_opts.append(
                 {
                     "kind": kind,
@@ -418,6 +423,7 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             "food": _r(n.store["food"], 1),
             "food_income": _r(L["made"]["food"] - L["consumed"]["food"], 1) if full else 0.0,
             "ingenuity": _r(sum(L.get("ingenuity", {}).values()), 1),
+            "explore_ingenuity": _r(n.counters.get("explore_ingenuity", 0.0), 1),
             "researching": n.researching,
             "research_queue": n.research_queue,
             "research_progress": _r(n.research_progress, 1),

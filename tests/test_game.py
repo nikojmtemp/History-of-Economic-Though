@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from stock.game import actions, research, rules, turn
+from stock.game import actions, research, rules, trade, turn
 from stock.game.state import World
 from stock.game.worldgen import generate, parse_spec
 
@@ -40,18 +40,23 @@ def test_same_seed_same_world() -> None:
     assert [(e.a, e.b, e.kind) for e in a.edges] == [(e.a, e.b, e.kind) for e in b.edges]
 
 
-@pytest.mark.parametrize("seed", range(1, 9))
-def test_world_is_connected_and_every_people_starts_with_a_band(seed: int) -> None:
-    w = generate(seed=seed)
-    start = next(iter(w.nodes))
+def _reach(w: World, start: str, *, sea: bool) -> set[str]:
     seen, stack = {start}, [start]
     while stack:
-        for nxt in w.neighbours(stack.pop()):
+        for nxt in w.neighbours(stack.pop(), sea=sea):
             if nxt not in seen:
                 seen.add(nxt)
                 stack.append(nxt)
-    assert seen == set(w.nodes)
+    return seen
+
+
+@pytest.mark.parametrize("seed", range(1, 9))
+def test_world_is_connected_and_every_people_starts_with_a_band(seed: int) -> None:
+    w = generate(seed=seed)
     starts = [u.node for u in w.units.values()]
+    assert _reach(w, starts[0], sea=True) == set(w.nodes)  # everywhere can be reached, by sea at worst
+    mainland = _reach(w, starts[0], sea=False)
+    assert all(s in mainland for s in starts)  # every people starts on the one mainland
     assert len(starts) == len(w.nations) == len(set(starts))
     assert sum("wild_herds" in n.features for n in w.nodes.values()) >= len(w.nations)
     assert sum(n.player for n in w.nations.values()) == 1
@@ -433,3 +438,68 @@ def test_each_later_discovery_makes_the_next_dearer() -> None:
         before * (1 + rules.LATE_ESCALATION) / 1.0, rel=0.01
     )
     assert research.cost(w, n, "weaving") == early  # the early eras do not escalate
+
+
+@pytest.mark.parametrize("seed", range(1, 7))
+def test_ranges_have_passes_and_islands_are_reached_only_by_sea(seed: int) -> None:
+    w = generate(seed=seed)
+    starts = [u.node for u in w.units.values()]
+    mainland = _reach(w, starts[0], sea=False)
+    islands = set(w.nodes) - mainland
+    assert islands, "some places are reached only by sea"
+    for i in islands:
+        assert w.nodes[i].coast
+        assert all(e.kind == "sea" or e.other(i) in islands for e in w.adjacency()[i])
+    passes = [e for e in w.edges if e.kind == "pass"]
+    assert passes, "a range with a way over it"
+    for e in passes:  # a pass is a bottleneck: without it, the land falls apart
+        rest = [x for x in w.edges if x is not e and x.kind != "sea"]
+        seen, stack = {e.a}, [e.a]
+        while stack:
+            cur = stack.pop()
+            for x in rest:
+                if cur in (x.a, x.b) and x.other(cur) not in seen:
+                    seen.add(x.other(cur))
+                    stack.append(x.other(cur))
+        assert e.b not in seen
+    assert any("rare" in w.nodes[i].features for i in islands)
+
+
+def _scouts(w: World) -> tuple[str, Any]:
+    me, uid = _me(w)
+    n = w.nations[me]
+    band = w.units[uid]
+    band.hands = 6.0
+    assert actions.act(w, me, {"kind": "raise_unit", "unit": uid, "unit_kind": "scouts"}) is None
+    s = next(u for u in w.units_of(me) if u.kind == "scouts")
+    s.moves_left = s.max_moves(set(n.known))
+    return me, s
+
+
+def test_scouts_cross_rough_ground_cheaply_and_see_far() -> None:
+    w = generate(seed=5)
+    me, s = _scouts(w)
+    for e in w.edges:
+        e.kind = "rough" if e.kind == "path" else e.kind
+    to = w.neighbours(s.node)[0]
+    assert actions.move_cost(w, s, to) == 1
+    two_steps = {x for y in w.neighbours(s.node) for x in w.neighbours(y)}
+    assert two_steps <= trade.visible(w, w.nations[me])
+    assert actions.act(w, me, {"kind": "settle", "unit": s.id}) is not None
+    assert actions.act(w, me, {"kind": "disband", "unit": s.id}) is None
+
+
+def test_exploring_and_meeting_peoples_feed_ingenuity() -> None:
+    w = generate(seed=5)
+    me, _ = _me(w)
+    n = w.nations[me]
+    before = n.research_progress
+    fresh = next(x for x in w.nodes if x not in n.explored)
+    w.units[next(u.id for u in w.units_of(me))].node = fresh
+    trade.update_fog(w, n)
+    assert n.research_progress > before
+    other = next(o for o in w.nations.values() if o.id != me)
+    w.units[next(u.id for u in w.units_of(me))].node = next(u.node for u in w.units_of(other.id))
+    gained = n.research_progress
+    trade.update_contacts(w)
+    assert other.id in n.contacts and n.research_progress == gained + rules.CONTACT_INGENUITY

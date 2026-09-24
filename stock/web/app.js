@@ -155,6 +155,9 @@ function renderMap() {
     if (e.kind === "sea") {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2 - 18;
       svg.push(`<path class="edge-sea" fill="none" d="M${a.x},${a.y} Q${mx},${my} ${b.x},${b.y}"/>`);
+    } else if (e.kind === "pass") {
+      svg.push(`<line class="edge-pass" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" data-tip="A mountain pass: the one way over the range here. Crossing costs 2 moves, and whoever holds either end holds the road."/>`);
+      svg.push(`<text class="pass-mark" x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 - 4}" text-anchor="middle">pass</text>`);
     } else svg.push(`<line class="edge-${e.kind}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/>`);
   }
   for (const r of S.routes) {
@@ -218,14 +221,16 @@ function renderMap() {
       const isSel = selUnit && selUnit.id === u.id;
       const edge = isSel ? "var(--warn)" : u.hostile ? "var(--down)" : "var(--paper)";
       const sw = isSel || u.hostile ? 3 : 1.5;
-      const shape = u.military
+      const shape = u.kind === "scouts"
+        ? `<path d="M${x},${y - 10} L${x + 8},${y} L${x},${y + 10} L${x - 8},${y} Z" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`
+        : u.military
         ? `<path d="M${x - 9},${y - 9} L${x + 9},${y - 9} L${x + 9},${y + 2} Q${x},${y + 12} ${x - 9},${y + 2} Z" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`
         : u.kind === "horde"
           ? `<circle cx="${x}" cy="${y}" r="9" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`
           : `<path d="M${x},${y - 10} L${x + 10},${y + 7} L${x - 10},${y + 7} Z" fill="${col}" stroke="${edge}" stroke-width="${sw}"/>`;
       const who = u.rebel ? "Rebels" : u.nation === S.me.id ? "Your" : esc(nations[u.nation]?.name) + "'s";
       const tip = `${who} ${u.name}: ${fmt(u.hands)} hands${u.herds ? `, ${fmt(u.herds, 0)} head of herds` : ""}\nStrength ${fmt(u.strength)}${u.military ? ` · cohesion ${u.cohesion}` : ""}${u.hostile ? "\nAt war with you" : ""}${u.moves_left != null ? `\nMoves ${u.moves_left}/${u.max_moves}` : ""}`;
-      const label = u.military ? Math.round(u.strength) : Math.round(u.hands);
+      const label = u.kind === "scouts" ? "S" : u.military ? Math.round(u.strength) : Math.round(u.hands);
       svg.push(`<g class="unit" data-unit="${u.id}" data-tip="${esc(tip)}">${shape}<text x="${x}" y="${y + (u.military ? 1 : u.kind === "horde" ? 3 : 4)}" text-anchor="middle">${label}</text></g>`);
     });
   }
@@ -299,11 +304,15 @@ function groundText(n) {  // "River valley", not "River valley · river"
   const t = n.terrain_name.toLowerCase();
   return n.terrain_name + (n.river && !t.includes("river") ? " · river" : "") + (n.coast && !t.includes("coast") ? " · coast" : "");
 }
+function isIsland(id) {  // no way there but by sea
+  return !S.edges.some((e) => e.kind !== "sea" && (e.a === id || e.b === id));
+}
 function nodeTip(n) {
   const lines = [`${n.name} — ${n.terrain_name}${n.river ? ", on a river" : ""}${n.coast ? ", coast" : ""}`];
   const y = n.yields;
   lines.push(`game ${fmt(y.game, 1)} · grazing ${fmt(y.grazing, 1)} · arable ${fmt(y.arable, 2)}${y.fish ? ` · fish ${y.fish}` : ""}`);
   if (n.features.length) lines.push("Has " + n.features.map((f) => FEATURE[f]).join(", "));
+  if (isIsland(n.id)) lines.push("An island: reached only by sea (a band sails from our own port, once we know Sail)");
   if (n.visible) {
     if (n.owner) lines.push(`Settled by ${S.nations.find((x) => x.id === n.owner)?.name}: ${fmt(n.hands)} hands`);
     if (n.game != null) lines.push(`Game left ${pct(n.game)}`);
@@ -378,6 +387,7 @@ function renderSelectionBody() {
     const n = nodeById()[u.node];
     if (u.military) { box.innerHTML = armyCard(u, n); return; }
     if (u.kind === "caravan" || u.kind === "merchantman") { box.innerHTML = traderCard(u, n); return; }
+    if (u.kind === "scouts") { box.innerHTML = scoutCard(u, n); return; }
     let h = `<h2>${u.kind === "horde" ? "Horde" : "Band"} at ${esc(n.name)}</h2>`;
     h += `<div>${fmt(u.hands)} hands${u.herds ? ` · ${fmt(u.herds, 0)} head of herds` : ""} · moves ${u.moves_left}/${u.max_moves}${u.followed ? " · following the herds" : ""}</div>`;
     h += `<div class="verbs">`;
@@ -474,6 +484,13 @@ function flowText(r) {
   if (!r.active) return "Blockaded: nothing moves.";
   const parts = Object.entries(r.flows).filter(([, q]) => Math.abs(q) > 0.005).map(([g, q]) => r.mine ? `${q > 0 ? "we sell" : "we buy"} ${fmt(Math.abs(q), 1)} ${GOOD_GLYPH[g]}` : `${fmt(Math.abs(q), 1)} ${g}`);
   return (parts.join(", ") || "no trade this turn: prices too close") + `\ncapacity ${r.capacity} · carriage ${pct(r.carriage)}${r.opened_by_us ? ` · our merchants' profit ${fmt(r.profit, 1)}` : ""}`;
+}
+function scoutCard(u, n) {
+  const known = S.nodes.length;
+  let h = `<h2>Scouts at ${esc(n.name)}</h2><div>${fmt(u.hands)} hand${u.hands === 1 ? "" : "s"} · moves ${u.moves_left}/${u.max_moves} · we know ${known} places</div>`;
+  h += `<div class="verbs"><button data-tip="Call them home: their hands rejoin a settlement or band of ours." onclick="act({kind:'disband',unit:'${u.id}'})">Disband</button></div>`;
+  h += `<div class="small muted">${esc(u.description)} Every place first seen adds to our Ingenuity, more if it holds ore, coal, rare goods or wild herds, and most of all a people met for the first time. Exploration has brought us ${fmt(S.me.explore_ingenuity, 0)} Ingenuity so far.</div>`;
+  return h;
 }
 function traderCard(u, n) {
   let h = `<h2>${esc(u.name)} at ${esc(n.name)}</h2><div>moves ${u.moves_left}/${u.max_moves}</div><div class="verbs">`;

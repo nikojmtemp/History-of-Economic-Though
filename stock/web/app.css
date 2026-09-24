@@ -53,6 +53,8 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 .edge-rough { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; opacity: .55; }
 .edge-river { stroke: #5b8fb8; stroke-width: 3.5; opacity: .75; }
 .edge-road { stroke: #8a6d3b; stroke-width: 2.5; }
+.edge-pass { stroke: #b8862b; stroke-width: 3.5; stroke-dasharray: 7 3; cursor: help; }
+.pass-mark { font: bold 8px var(--sans); fill: #b8862b; pointer-events: none; letter-spacing: .04em; }
 .edge-sea { stroke: #5b8fb8; stroke-width: 1; stroke-dasharray: 1 4; opacity: .7; }
 .node { cursor: pointer; }
 .node.fog circle.body { opacity: .45; }

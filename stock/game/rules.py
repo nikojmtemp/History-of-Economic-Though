@@ -575,7 +575,7 @@ DISCOVERIES: dict[str, Discovery] = {
             (("fishing", "weaving"),),
             ("own_coast", 1),
             "Settle a coast node",
-            "Port, sea lanes",
+            "Port, sea lanes; bands may sail from our ports",
         ),
         _d(
             "guilds",
@@ -1050,6 +1050,17 @@ UNITS: dict[str, UnitType] = {
             description="A people with its herds. Every herdsman rides: formidable when attacked.",
         ),
         UnitType(
+            "scouts",
+            "Scouts",
+            1.0,
+            0.3,
+            3,
+            False,
+            description="A few hands sent to see what lies beyond: 3 moves, over mountains and passes as "
+            "easily as the plain, and through other peoples' open country in peacetime. They see two "
+            "steps around them. They neither fight nor settle.",
+        ),
+        UnitType(
             "warband",
             "Warband",
             1.0,
@@ -1165,6 +1176,12 @@ UNITS: dict[str, UnitType] = {
         ),
     )
 }
+
+# exploration (§5.5): what is learned of the world feeds invention
+EXPLORE_INGENUITY = 0.75  # per place first seen
+EXPLORE_FEATURE_INGENUITY = 2.5  # more for a place with ore, coal, rare goods or wild herds
+CONTACT_INGENUITY = 8.0  # meeting a people: their ways, their tools, their tales
+SCOUT_SIGHT = 2  # steps
 
 #: attacker -> defender multipliers (§15.3); unlisted pairs are 1.0
 MATCHUP: dict[str, dict[str, float]] = {
