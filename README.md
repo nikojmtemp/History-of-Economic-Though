@@ -21,6 +21,8 @@ Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:N
 
 Builds a windowed app in `dist/Stock/`. With `--desktop` it installs the app to `%LOCALAPPDATA%\Programs\Stock` and puts a **Stock** shortcut with the logo on the desktop. Double-clicking opens the game in the default browser, with no console window. The app quits by itself three minutes after the last game tab is closed, and launching it again while it runs reopens the same game. What it would print goes to `%LOCALAPPDATA%\Stock\stock.log`.
 
+`scripts/build_exe.py --installer` also writes **`dist/Stock-Setup.exe`**, an install wizard with the app compressed inside it, and **`dist/Stock-Setup.zip`** holding it, for sending by email. The wizard (`scripts/setup_wizard.py`) installs for the current user without administrator rights. It asks for a folder, a desktop icon, a Start menu entry and whether to launch at the end, and it registers an uninstaller in Windows' Apps & features. `Stock-Setup.exe --silent [--dir PATH]` installs without a window.
+
 ## Check
 
 ```bash

@@ -1,6 +1,6 @@
 """Freeze `stock.launch` into a windowed application with PyInstaller.
 
-    .venv/Scripts/python.exe scripts/build_exe.py [--desktop]
+    .venv/Scripts/python.exe scripts/build_exe.py [--desktop] [--installer]
 
 Writes `dist/Stock/` (one folder: `Stock.exe` and its `_internal/`). A folder app starts
 at once, where a single-file exe must unpack itself on every launch. It has no console:
@@ -11,6 +11,9 @@ minutes after the last page is closed (`stock/launch.py`). The icon is `scripts/
 With `--desktop`, the app is copied to `%LOCALAPPDATA%/Programs/Stock` and a `Stock`
 shortcut, with its icon, is put on the desktop. The shortcut's icon file is named for its
 content, so a new icon shows at once instead of Windows' cached old one.
+
+With `--installer`, it also writes `dist/Stock-Setup.exe`, an install wizard with the app
+compressed inside it (`scripts/setup_wizard.py`), and `dist/Stock-Setup.zip` holding it.
 
 `stock/server.py` locates the UI relative to its own `__file__`, which PyInstaller resolves
 inside the bundle, so no path in the package changes when frozen. Build scratch goes to
@@ -26,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import PyInstaller.__main__
@@ -33,6 +37,14 @@ import PyInstaller.__main__
 ROOT = Path(__file__).resolve().parents[1]
 SCRATCH = ROOT / ".pyinstaller"
 ICON = ROOT / "scripts" / "stock.ico"
+README = """Stock: Adam Smith's four stages
+
+Unzip, then run Stock-Setup.exe and follow the wizard. It installs for you alone,
+with no administrator rights. The game opens in your web browser.
+
+Windows may warn that the publisher is unknown (the setup is not signed):
+choose More info, then Run anyway.
+"""
 
 
 def build() -> Path:
@@ -153,10 +165,61 @@ def shortcut(home: Path) -> Path:
     return link
 
 
+def installer(app: Path) -> tuple[Path, Path]:
+    """`dist/Stock-Setup.exe`: the install wizard (`scripts/setup_wizard.py`) with the app
+    zipped inside it; and `dist/Stock-Setup.zip`, the wizard in a zip, for sending where a
+    bare .exe would be refused."""
+
+    payload = SCRATCH / "payload"
+    if payload.exists():
+        shutil.rmtree(payload)
+    payload.mkdir(parents=True)
+    with zipfile.ZipFile(payload / "Stock.zip", "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for f in sorted(app.rglob("*")):
+            if f.is_file():
+                z.write(f, f.relative_to(app).as_posix())
+    shutil.copyfile(ICON, payload / "stock.ico")
+    shutil.copyfile(ROOT / "stock" / "web" / "icon.png", payload / "icon.png")
+    PyInstaller.__main__.run(
+        [
+            str(ROOT / "scripts" / "setup_wizard.py"),
+            "--name",
+            "Stock-Setup",
+            "--onefile",
+            "--windowed",
+            "--noconfirm",
+            "--clean",
+            "--icon",
+            str(ICON),
+            "--distpath",
+            str(ROOT / "dist"),
+            "--workpath",
+            str(SCRATCH / "work-setup"),
+            "--specpath",
+            str(SCRATCH),
+            "--add-data",
+            f"{payload}{os.pathsep}payload",
+            "--exclude-module",
+            "numpy",
+            "--exclude-module",
+            "PIL",
+        ]
+    )
+    setup = ROOT / "dist" / "Stock-Setup.exe"
+    archive = ROOT / "dist" / "Stock-Setup.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        z.write(setup, setup.name)
+        z.writestr("READ ME.txt", "\r\n".join(README.splitlines()) + "\r\n")
+    return setup, archive
+
+
 def main() -> None:
     app = build()
     if "--desktop" in sys.argv[1:]:
         print(f"Shortcut: {install(app)}")
+    if "--installer" in sys.argv[1:]:
+        for f in installer(app):
+            print(f"{f.name}: {f.stat().st_size / 1e6:.1f} MB")
 
 
 if __name__ == "__main__":
