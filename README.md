@@ -3,6 +3,21 @@
 A turn-based civ-lite about Adam Smith's four stages. The design is in
 [Stock - Design Document.md](Stock%20-%20Design%20Document.md); section numbers in code (`§9.6`) point there.
 
+## Download
+
+| Your computer | Download |
+|---|---|
+| Windows 10 or 11 | [**Stock-Setup.exe**](https://github.com/nikojmtemp/History-of-Economic-Though/releases/latest/download/Stock-Setup.exe): run it and follow the wizard. Or [Stock-Setup.zip](https://github.com/nikojmtemp/History-of-Economic-Though/releases/latest/download/Stock-Setup.zip), the same installer zipped for email. |
+| Mac with Apple silicon (M1 or later) | [**Stock.dmg**](https://github.com/nikojmtemp/History-of-Economic-Though/releases/latest/download/Stock.dmg): open it and drag Stock onto Applications. |
+
+The game opens in your web browser and saves as you play. All versions are on the [Releases](https://github.com/nikojmtemp/History-of-Economic-Though/releases) page. The apps aren't signed with a paid certificate, so the first launch shows a warning: on Windows choose **More info**, then **Run anyway**; on the Mac right-click Stock, choose **Open**, then **Open** again.
+
+Releases are built by `.github/workflows/build.yml` whenever a version tag is pushed:
+
+```bash
+git tag -a v1.1 -m "What changed" && git push origin v1.1
+```
+
 ## Run
 
 ```bash

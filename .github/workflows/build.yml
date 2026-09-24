@@ -1,7 +1,13 @@
 # Builds Stock for Windows and the Mac on GitHub's machines (PyInstaller cannot
-# cross-build: each app is made on its own system). Run it from the Actions tab
-# ("Run workflow"), or push a tag like v1.0. The downloads appear under the run's
-# Artifacts: Stock-Windows (Stock-Setup.zip) and Stock-Mac (Stock.dmg).
+# cross-build: each app is made on its own system), and publishes a Release.
+#
+# Push a tag like v1.1 (git tag -a v1.1 -m "..." && git push origin v1.1): the tests run,
+# both apps are built, and a GitHub Release named for the tag is published with
+# Stock-Setup.exe, Stock-Setup.zip and Stock.dmg attached. The README's download links
+# point at the latest release, so they never need changing.
+#
+# "Run workflow" on the Actions tab builds without publishing: the files appear under
+# the run's Artifacts (Stock-Windows, Stock-Mac).
 
 name: Build
 
@@ -34,7 +40,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Stock-Windows
-          path: dist/Stock-Setup.zip
+          path: |
+            dist/Stock-Setup.exe
+            dist/Stock-Setup.zip
 
   mac:
     needs: test
@@ -50,3 +58,35 @@ jobs:
         with:
           name: Stock-Mac
           path: dist/Stock.dmg
+
+  release:
+    needs: [windows, mac]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to publish the release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" out/Stock-Setup.exe out/Stock-Setup.zip out/Stock.dmg \
+            --repo "$GITHUB_REPOSITORY" --title "Stock $TAG" --notes "$(cat <<'EOF'
+          **Stock**: a game of Adam Smith's four stages of society.
+
+          | Your computer | Download |
+          | --- | --- |
+          | Windows 10 or 11 | **Stock-Setup.exe**: run it and follow the wizard (or Stock-Setup.zip, the same installer zipped) |
+          | Mac with Apple silicon (M1 or later) | **Stock.dmg**: open it and drag Stock onto Applications |
+
+          The game opens in your web browser. It saves as you play and picks up where you left off.
+
+          The apps are not signed by a paid certificate, so the first launch shows a warning:
+          on Windows choose **More info**, then **Run anyway**; on the Mac right-click Stock, choose **Open**, then **Open** again.
+          EOF
+          )"
