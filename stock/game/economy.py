@@ -152,8 +152,10 @@ def _work_jobs(
         prod *= 0.75
     herdsmen_left = nd.herds / rules.HERDS_PER_HERDSMAN
     extent = float(n.last.get("extent", 0.0))
+    seen: dict[str, int] = {}
     for w in nd.works:
         work = rules.WORKS[w]
+        seen[w] = seen.get(w, 0) + 1  # the first `improved` of each kind are the improved ones
         if work.jobs == 0:
             continue
         per: dict[str, float] = {}
@@ -191,6 +193,11 @@ def _work_jobs(
             per = {"service": rules.MARKET_SERVICE_PER_EXTENT * extent}
         else:
             per = dict(work.makes)
+        imp = rules.IMPROVEMENTS.get(w)
+        if imp is not None and seen[w] <= nd.improved_count(w):
+            per = {g: q * imp.mult for g, q in per.items()}
+            for g, q in imp.extra.items():
+                per[g] = per.get(g, 0.0) + q
         boost = rules.PATENT_BOOST if n.counters.get(f"patent:{nd.id}", 0.0) >= world.turn else 1.0
         per = {g: q * prod * boost for g, q in per.items()}
         value = sum(q * (n.prices[g] if g in n.prices else 1.0) for g, q in per.items())

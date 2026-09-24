@@ -8,11 +8,19 @@ from stock.game import rules
 from stock.game.state import Nation, World
 
 
+def has_markets(world: World, n: Nation) -> bool:
+    """A commercial society is one where every man lives by exchanging: it needs a market
+    town, not only workshops (§8)."""
+
+    return any("market" in nd.works for nd in world.nodes_of(n.id))
+
+
 def update_mode(world: World, n: Nation) -> None:
     sources: dict[str, float] = n.last.get("sources", {})
     if not sources or sum(sources.values()) <= 0:
         return
-    leader = max(rules.MODES, key=lambda m: sources.get(m, 0.0))
+    modes = [m for m in rules.MODES if m != "commerce" or has_markets(world, n)]
+    leader = max(modes, key=lambda m: sources.get(m, 0.0))
     if leader == n.mode:
         n.mode_challenger, n.mode_streak = None, 0
         return

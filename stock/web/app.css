@@ -89,6 +89,9 @@ h3 { font-size: 14px; margin: 10px 0 6px; }
 .build { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px; margin-top: 6px; }
 .build button { text-align: left; }
 .build .ret { float: right; }
+.build button.grow { border-color: var(--accent); font-weight: 600; }
+.build button.improve { border-style: dashed; }
+.work.imp, .imp { color: var(--accent); }
 
 #screen { position: fixed; inset: 56px 0 0 0; background: var(--paper);
   overflow: auto; z-index: 10; padding: 16px 24px; }

@@ -144,6 +144,9 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
             siege=nd.siege,
             conquered=nd.conquered,
             forts=nd.works.count("fort"),
+            tier=nd.tier if nd.owner else None,
+            tier_name=rules.TIERS[nd.tier].name if nd.owner else None,
+            improved=dict(nd.improved) if nd.owner else {},
             enemy=world.hostile_owner(n.id, nd),
         )
     if nd.owner == n.id:
@@ -163,6 +166,37 @@ def _node(world: World, n: Nation, node_id: str, vis: set[str]) -> dict[str, Any
                 entry["return"] = _r(actions.expected_return(world, n, nd, w.key), 3)
             buildable.append(entry)
         out["buildable"] = buildable
+        out["tier"] = nd.tier
+        out["tier_name"] = rules.TIERS[nd.tier].name
+        if nd.tier < len(rules.TIERS) - 1:
+            nxt = rules.TIERS[nd.tier + 1]
+            out["grow"] = {
+                "name": nxt.name,
+                "cost": nxt.cost,
+                "slots": nxt.slots,
+                "ingenuity": nxt.ingenuity,
+                "needs": nxt.needs,
+                "why": actions.grow_blocker(world, n, nd.id),
+            }
+        improvements = []
+        for work, imp in rules.IMPROVEMENTS.items():
+            if work not in nd.works:
+                continue
+            why = actions.improve_blocker(world, n, nd.id, work)
+            entry = {
+                "work": work,
+                "name": imp.name,
+                "cost": imp.cost,
+                "description": imp.description,
+                "improved": nd.improved_count(work),
+                "count": nd.works.count(work),
+                "why": why,
+                "needs": rules.DISCOVERIES[imp.needs].name,
+            }
+            if why is None:
+                entry["return"] = _r(actions.improvement_return(world, n, nd, work), 3)
+            improvements.append(entry)
+        out["improvements"] = improvements
         out["found_band"] = actions.check(world, n, {"kind": "found_band", "node": nd.id})
         out["send_trader"] = {
             which: actions.check(world, n, {"kind": "send_trader", "node": nd.id, "trader": which})
@@ -399,6 +433,7 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
         "turn": world.turn,
         "year": rules.year_of(world.turn),
         "last_turn": rules.LAST_TURN,
+        "hegemony_earliest": rules.HEGEMONY_EARLIEST,
         "spec": world.spec,
         "winner": world.winner,
         "hegemony": world.hegemony,
@@ -522,6 +557,11 @@ def snapshot(world: World, nation_id: str | None = None) -> dict[str, Any]:
             }
             for w in rules.WORKS.values()
         ],
+        "improvement_types": {
+            k: {"name": i.name, "cost": i.cost, "needs": rules.DISCOVERIES[i.needs].name}
+            for k, i in rules.IMPROVEMENTS.items()
+        },
+        "tiers": [{"name": t.name, "slots": t.slots, "cost": t.cost} for t in rules.TIERS],
         "unit_types": {
             k: {
                 "kind": k,

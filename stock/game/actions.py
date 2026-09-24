@@ -44,7 +44,75 @@ def work_cost(n: Nation, work: str) -> float:
 
 
 def queued_on(n: Nation, node_id: str) -> int:
-    return sum(1 for q in n.build_queue if q["node"] == node_id)
+    """Queued works that will take a slot here (improvements take none)."""
+
+    return sum(1 for q in n.build_queue if q["node"] == node_id and not q.get("improve"))
+
+
+def grow_blocker(world: World, n: Nation, node_id: Any) -> str | None:
+    """Why this settlement cannot grow to the next tier now (§9.2a), or None."""
+
+    nd = _own_node(world, n, node_id)
+    if nd is None:
+        return "not your settled node"
+    if nd.tier >= len(rules.TIERS) - 1:
+        return "already a city"
+    nxt = rules.TIERS[nd.tier + 1]
+    if nd.hands < nxt.hands:
+        return f"needs {nxt.hands:.0f} hands (has {nd.hands:.0f})"
+    if nd.tier + 1 == 2:
+        if economy.security_of(world, n) < rules.TOWN_SECURITY:
+            return f"needs Security of {rules.TOWN_SECURITY:.0%}"
+        if "market" not in nd.works and not nd.river:
+            return "needs a Market Town or a river"
+    if nd.tier + 1 == 3:
+        if n.seat != "civil":
+            return "needs a civil government"
+        if "market" not in nd.works:
+            return "needs a Market Town"
+    if n.stock < nxt.cost:
+        return f"needs {nxt.cost:.0f} Stock"
+    return None
+
+
+def improve_blocker(world: World, n: Nation, node_id: Any, work: str) -> str | None:
+    """Why this work cannot be improved here now (§9.2b), or None."""
+
+    nd = _own_node(world, n, node_id)
+    if nd is None:
+        return "not your settled node"
+    imp = rules.IMPROVEMENTS.get(work)
+    if imp is None:
+        return "no improvement for that work"
+    if not n.knows(imp.needs):
+        return f"needs {rules.DISCOVERIES[imp.needs].name}"
+    queued = sum(1 for q in n.build_queue if q["node"] == nd.id and q["work"] == work and q.get("improve"))
+    if nd.works.count(work) == 0:
+        return f"no {rules.WORKS[work].name} here"
+    if nd.works.count(work) - nd.improved_count(work) - queued <= 0:
+        return f"every {rules.WORKS[work].name} here is improved"
+    return None
+
+
+def improvement_return(world: World, n: Nation, nd: Node, work: str) -> float:
+    """What improving one more of `work` here would add to the town's surplus, per Stock."""
+
+    before = _surplus(world, n, nd)
+    had = nd.improved.get(work, 0)
+    nd.improved[work] = nd.improved_count(work) + 1
+    try:
+        after = _surplus(world, n, nd)
+    finally:
+        nd.improved[work] = had
+    return (after - before) / max(rules.IMPROVEMENTS[work].cost, 1.0)
+
+
+def _improve(world: World, n: Nation, nd: Node, work: str, note: str = "") -> None:
+    nd.improved[work] = nd.improved_count(work) + 1
+    imp = rules.IMPROVEMENTS[work]
+    world.emit(
+        n.id, "built", f"{rules.WORKS[work].name} at {nd.name} becomes {imp.name.lower()}{note}.", nd.id
+    )
 
 
 def move_cost(world: World, u: Unit, to: str) -> int | None:
@@ -290,6 +358,10 @@ def check(world: World, n: Nation, a: Action) -> str | None:  # noqa: C901 - one
         return None
     if kind == "build":
         return build_blocker(world, n, a.get("node"), str(a.get("work", "")))
+    if kind == "improve":
+        return improve_blocker(world, n, a.get("node"), str(a.get("work", "")))
+    if kind == "grow":
+        return grow_blocker(world, n, a.get("node"))
     if kind == "demolish":
         site = _own_node(world, n, a.get("node"))
         if site is None:
@@ -537,6 +609,23 @@ def act(world: World, nation_id: str, a: Action) -> str | None:
             )
         else:
             n.build_queue.append({"node": str(a["node"]), "work": work, "status": "waiting"})
+    elif kind == "improve":
+        n.build_queue.append(
+            {"node": str(a["node"]), "work": str(a["work"]), "improve": True, "status": "waiting"}
+        )
+    elif kind == "grow":
+        nd = world.nodes[str(a["node"])]
+        nd.tier += 1
+        tier = rules.TIERS[nd.tier]
+        n.stock -= tier.cost
+        world.emit(
+            n.id,
+            "grew",
+            f"{nd.name} grows into a {tier.name.lower()}: room for {tier.slots} works"
+            + (f", and Ingenuity +{tier.ingenuity:.0f}" if tier.ingenuity else "")
+            + ".",
+            nd.id,
+        )
     elif kind == "demolish":
         _pull_down(world, n, world.nodes[str(a["node"])], str(a["work"]))
     elif kind == "unqueue":
@@ -662,13 +751,16 @@ def process_build_queue(world: World, n: Nation) -> None:
         if blocked:
             keep.append(item)
             continue
-        cost = work_cost(n, work)
+        improve = bool(item.get("improve"))
+        if improve and nd.works.count(work) - nd.improved_count(work) <= 0:
+            continue  # nothing left here to improve: the work was pulled down or taken
+        cost = rules.IMPROVEMENTS[work].cost if improve else work_cost(n, work)
         if n.stock < cost:
             item["status"] = f"waiting for Stock ({n.stock:.0f}/{cost:.0f})"
             keep.append(item)
             blocked = True
             continue
-        ret = expected_return(world, n, nd, work)
+        ret = improvement_return(world, n, nd, work) if improve else expected_return(world, n, nd, work)
         bounty = 0.0
         if ret < r:
             bounty = round(cost * (r - ret) * 5.0, 1)
@@ -680,23 +772,34 @@ def process_build_queue(world: World, n: Nation) -> None:
                 continue
             n.treasury -= bounty
         n.stock -= cost
-        _raise_work(world, n, nd, work, f" (bounty {bounty:.0f} from the Treasury)" if bounty else "")
+        note = f" (bounty {bounty:.0f} from the Treasury)" if bounty else ""
+        if improve:
+            _improve(world, n, nd, work, note)
+        else:
+            _raise_work(world, n, nd, work, note)
     n.build_queue = keep
     if n.auto_invest and not blocked and n.knows(rules.AUTO_INVEST_TECH):
         _investors_choose(world, n, r)
 
 
-def best_investment(world: World, n: Nation, r: float) -> tuple[float, Node, str] | None:
-    """The private work that would pay best, anywhere we hold, if it beats the rate of profit."""
+def best_investment(world: World, n: Nation, r: float) -> tuple[float, Node, str, bool] | None:
+    """The private work, or improvement, that would pay best anywhere we hold, if it beats the
+    rate of profit: (return, node, work, is an improvement)."""
 
-    best: tuple[float, Node, str] | None = None
+    best: tuple[float, Node, str, bool] | None = None
     for nd in world.nodes_of(n.id):
         for work, w in rules.WORKS.items():
             if w.public or build_blocker(world, n, nd.id, work) is not None:
                 continue
             ret = expected_return(world, n, nd, work)
             if ret >= r and (best is None or ret > best[0]):
-                best = (ret, nd, work)
+                best = (ret, nd, work, False)
+        for work in rules.IMPROVEMENTS:
+            if improve_blocker(world, n, nd.id, work) is not None:
+                continue
+            ret = improvement_return(world, n, nd, work)
+            if ret >= r and (best is None or ret > best[0]):
+                best = (ret, nd, work, True)
     return best
 
 
@@ -710,11 +813,11 @@ def _investors_choose(world: World, n: Nation, r: float) -> None:
         if best is None and not replaced and n.knows(rules.REINVEST_TECH):
             swap = best_replacement(world, n, r)
             if swap is not None:
-                best = swap[:3]
+                best = (swap[0], swap[1], swap[2], False)
         if best is None:
             return
-        ret, nd, work = best
-        cost = work_cost(n, work)
+        ret, nd, work, improve = best
+        cost = rules.IMPROVEMENTS[work].cost if improve else work_cost(n, work)
         if n.stock - cost < rules.AUTO_INVEST_RESERVE:
             return
         if swap is not None:
@@ -722,7 +825,10 @@ def _investors_choose(world: World, n: Nation, r: float) -> None:
             _pull_down(world, n, nd, old, f" by its investors (it returned {old_ret:.0%})")
             replaced = True  # one a turn: capital moves, but not all at once
         n.stock -= cost
-        _raise_work(world, n, nd, work, f" by its investors, for a return of {ret:.0%}")
+        if improve:
+            _improve(world, n, nd, work, f" by its investors, for a return of {ret:.0%}")
+        else:
+            _raise_work(world, n, nd, work, f" by its investors, for a return of {ret:.0%}")
 
 
 def work_return(world: World, n: Nation, nd: Node, work: str) -> float:
@@ -794,7 +900,9 @@ def best_replacement(world: World, n: Nation, r: float) -> tuple[float, Node, st
 
 
 def _pull_down(world: World, n: Nation, nd: Node, work: str, note: str = "") -> None:
-    nd.works.remove(work)
+    nd.works.pop(len(nd.works) - 1 - nd.works[::-1].index(work))  # the last: an unimproved one if any
+    if work in nd.improved:
+        nd.improved[work] = nd.improved_count(work)
     if work == "pasture" and "pasture" not in nd.works:
         nd.herds *= 0.5  # half the herd goes to market
     world.emit(n.id, "demolished", f"{rules.WORKS[work].name} at {nd.name} is pulled down{note}.", nd.id)

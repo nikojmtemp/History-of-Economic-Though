@@ -30,13 +30,19 @@ class Node:
     revolt_turns: int = 0
     conquered: int = 0  # turns of conquest unrest left
     taken_from: str | None = None  # the people this node was last taken from in war
+    tier: int = 0  # 0 hamlet, 1 village, 2 town, 3 city (rules.TIERS)
+    improved: dict[str, int] = field(default_factory=dict)  # work -> how many of them are improved
 
     @property
     def t(self) -> rules.Terrain:
         return rules.TERRAIN[self.terrain]
 
     def slots(self) -> int:
-        return min(rules.WORK_SLOTS_MAX, rules.WORK_SLOTS_BASE + int(self.hands / rules.WORK_SLOTS_PER_HANDS))
+        cap = rules.TIERS[self.tier].slots
+        return min(cap, rules.WORK_SLOTS_BASE + int(self.hands / rules.WORK_SLOTS_PER_HANDS))
+
+    def improved_count(self, work: str) -> int:
+        return min(self.improved.get(work, 0), self.works.count(work))
 
     def site_ok(self, site: str | None) -> bool:
         t = self.t

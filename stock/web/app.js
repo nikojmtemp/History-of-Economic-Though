@@ -89,7 +89,7 @@ function renderTop() {
   const orbitNote = me.orbit_of ? ` · <span class="warn">in ${esc(nationName(me.orbit_of))}'s orbit</span>` : "";
   $("hegemony").innerHTML = `Produce ${pct(mine.share)} of 40% · orbit ${me.sphere.length}/${me.sphere_need}${orbitNote}<div class="bar"><i style="width:${pct(mine.share)}"></i><b style="left:40%"></b></div>${cd}`;
   const held = Object.entries(me.levers_on_us || {}).map(([a, l]) => `${nationName(a)} ${l.detail} (${l.kind})`).join("\n");
-  $("hegemony").dataset.tip = `Hegemony: 40% of the world's produce and half the other peoples in your orbit (${me.sphere_need}), held for 10 turns, from turn 50. The others will combine against whoever gets there. Otherwise, at turn 150 the most opulent people wins, if it is in no one's orbit.\nIn our orbit: ${me.sphere.map(nationName).join(", ") || "nobody"}.${held ? `\nLevers over us:\n${held}` : ""}`;
+  $("hegemony").dataset.tip = `Hegemony: 40% of the world's produce and half the other peoples in your orbit (${me.sphere_need}), held for 10 turns, from turn ${S.hegemony_earliest}. The others will combine against whoever gets there. Otherwise, at turn ${S.last_turn} the most opulent people wins, if it is in no one's orbit.\nIn our orbit: ${me.sphere.map(nationName).join(", ") || "nobody"}.${held ? `\nLevers over us:\n${held}` : ""}`;
 
 }
 
@@ -316,7 +316,8 @@ function nodeTip(n) {
   if (n.visible) {
     if (n.owner) lines.push(`Settled by ${S.nations.find((x) => x.id === n.owner)?.name}: ${fmt(n.hands)} hands`);
     if (n.game != null) lines.push(`Game left ${pct(n.game)}`);
-    if (n.works && n.works.length) lines.push("Works: " + n.works.join(", "));
+    if (n.tier_name) lines[0] += ` · ${n.tier_name}`;
+    if (n.works && n.works.length) lines.push("Works: " + workLabels(n).map((w) => (w.improved ? `✦ ${w.label}` : w.label)).join(", "));
     if (n.herds) lines.push(`Herds ${fmt(n.herds, 0)}`);
   } else lines.push("(last seen)");
   return lines.join("\n");
@@ -404,10 +405,10 @@ function renderSelectionBody() {
   }
   const n = nodeById()[sel.id];
   if (!n) { sel = null; return renderSelectionBody(); }
-  let h = `<h2>${esc(n.name)} <span class="muted small">${groundText(n)}</span></h2>`;
+  let h = `<h2>${esc(n.name)} <span class="muted small">${n.owner && n.tier_name ? `${esc(n.tier_name)} · ` : ""}${groundText(n)}</span></h2>`;
   h += `<div class="small">${esc(nodeTip(n)).split("\n").slice(1).join(" · ")}</div>`;
   if (n.owner === S.me.id) {
-    h += `<div class="works" style="margin-top:6px">${(n.works || []).map((w) => `<span class="work">${esc(S.works.find((x) => x.key === w)?.name || w)} <button class="small" data-tip="Pull it down to free the slot. Nothing is refunded." onclick="if(confirm('Pull down this ${esc(S.works.find((x) => x.key === w)?.name || w)}?'))act({kind:'demolish',node:'${n.id}',work:'${w}'})">✕</button></span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
+    h += `<div class="works" style="margin-top:6px">${workLabels(n).map((w) => `<span class="work ${w.improved ? "imp" : ""}">${w.improved ? "✦ " : ""}${esc(w.label)} <button class="small" data-tip="Pull it down to free the slot. Nothing is refunded." onclick="if(confirm('Pull down a ${esc(w.base)}?'))act({kind:'demolish',node:'${n.id}',work:'${w.key}'})">✕</button></span>`).join("") || '<span class="muted">No works</span>'} <span class="muted small">${n.works.length}/${n.slots} slots · ${n.jobs} jobs for ${fmt(n.hands)} hands · unrest ${n.unrest}</span></div>`;
     if (n.siege) h += `<div class="warn">Besieged by ${esc(S.nations.find((x) => x.id === n.siege.by)?.name)}: falls in ${n.siege.turns} turns unless relieved.</div>`;
     h += `<div class="verbs"><button ${n.found_band ? "disabled" : ""} data-tip="${esc(n.found_band || "Send out a new band from this settlement to explore or settle elsewhere.")}" onclick="act({kind:'found_band',node:'${n.id}'})">Found a band</button>`;
     for (const [which, why] of Object.entries(n.send_trader || {})) {
@@ -722,11 +723,40 @@ function focusNode(id) {
   if (n) zoomTo(n.x, n.y, 2);
   renderAll();
 }
+function workLabels(n) {
+  const seen = {};
+  return (n.works || []).map((w) => {
+    seen[w] = (seen[w] || 0) + 1;
+    const improved = seen[w] <= ((n.improved || {})[w] || 0);
+    const base = S.works.find((x) => x.key === w)?.name || w;
+    return { key: w, improved, label: improved ? S.improvement_types[w].name : base, base };
+  });
+}
+function growButton(n) {
+  const g = n.grow;
+  if (!g) return "";
+  const tip = `Grow ${n.name} into a ${g.name.toLowerCase()}: room for ${g.slots} works (a ${n.tier_name.toLowerCase()} holds ${S.tiers[n.tier].slots})${g.ingenuity ? `, and Ingenuity +${g.ingenuity}` : ""}.\nCosts ${g.cost} Stock. Needs ${g.needs}.${g.why ? `\nNot now: ${g.why}` : ""}`;
+  return `<button class="grow" ${g.why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'grow',node:'${n.id}'})${screen ? ".then(renderScreen)" : ""}">Grow into a ${g.name} · ${g.cost}</button>`;
+}
+function improveButtons(n) {
+  let h = "";
+  for (const i of n.improvements || []) {
+    if (i.why && (/^needs [A-Z]/.test(i.why) || i.why.startsWith("every "))) continue;
+    const base = S.works.find((x) => x.key === i.work)?.name;
+    const ret = i.return != null ? `<span class="ret ${i.return >= (S.me.breakdowns.stock?.rate_of_profit || 0.12) ? "up" : "down"}">${pct(i.return)}</span>` : "";
+    const tip = `Improve a ${base} into a ${i.name.toLowerCase()}: ${i.description}\nIt keeps its slot. Costs ${i.cost} Stock; ${i.improved} of ${i.count} here improved so far.${i.return != null ? `\nExpected return ${pct(i.return)} against a rate of profit of ${pct(S.me.breakdowns.stock?.rate_of_profit)}.` : ""}${i.why ? `\nNot now: ${i.why}` : ""}`;
+    h += `<button class="improve" ${i.why ? "disabled" : ""} data-tip="${esc(tip)}" onclick="act({kind:'improve',node:'${n.id}',work:'${i.work}'})${screen ? ".then(renderScreen)" : ""}">✦ ${esc(i.name)} · ${i.cost} ${ret}</button>`;
+  }
+  return h;
+}
 function investButtons(n) {
+  return growButton(n) + improveButtons(n) + newWorkButtons(n);
+}
+function newWorkButtons(n) {
   const shown = (n.buildable || []).filter((b) => !(b.why && /^needs [A-Z]/.test(b.why) && !b.why.includes("Treasury") && !b.why.includes("Civil")));
   const full = shown.find((b) => b.why && b.why.startsWith("no free slot"));
   if (full) {  // a full town has room for nothing, whatever else it lacks
-    return `<span class="muted small">Every slot is taken (${esc(full.why.replace("no free slot ", "").replace(/[()]/g, ""))}). More hands open more slots, or pull down a work.</span>`;
+    return `<span class="muted small">Every slot is taken (${esc(full.why.replace("no free slot ", "").replace(/[()]/g, ""))}). Grow the settlement, bring more hands, improve what stands, or pull down a work.</span>`;
   }
   let h = "";
   for (const b of shown) {
@@ -741,7 +771,8 @@ function queueList() {
   const q = S.me.build_queue;
   if (!q.length) return `<p class="muted small">Nothing queued. Queue a work below: Stock builds it when there is enough, in queue order.</p>`;
   const again = screen ? ".then(renderScreen)" : "";
-  return `<table class="plain">` + q.map((it, i) => `<tr><td>${i + 1}.</td><td><b>${esc(S.works.find((x) => x.key === it.work)?.name)}</b> at <span class="place" onclick="focusNode('${it.node}')">${esc(nodeById()[it.node]?.name)}</span></td><td class="muted small">${esc(it.status)}</td><td>
+  const name = (it) => (it.improve ? `✦ ${S.improvement_types[it.work].name}` : S.works.find((x) => x.key === it.work)?.name);
+  return `<table class="plain">` + q.map((it, i) => `<tr><td>${i + 1}.</td><td><b>${esc(name(it))}</b> at <span class="place" onclick="focusNode('${it.node}')">${esc(nodeById()[it.node]?.name)}</span></td><td class="muted small">${esc(it.status)}</td><td>
     <button class="small" ${i ? "" : "disabled"} title="Earlier" onclick="act({kind:'reorder_queue',index:${i},to:${i - 1}})${again}">▲</button>
     <button class="small" ${i < q.length - 1 ? "" : "disabled"} title="Later" onclick="act({kind:'reorder_queue',index:${i},to:${i + 1}})${again}">▼</button>
     <button class="small" title="Drop" onclick="act({kind:'unqueue',index:${i}})${again}">✕</button></td></tr>`).join("") + `</table>`;
@@ -765,8 +796,8 @@ function screenSettlements() {
   else {
     h += `<table class="plain lands"><tr><th>Place</th><th>Hands</th><th>Produce</th><th>Works</th><th>Unrest</th><th>Invest</th></tr>`;
     for (const n of mine) {
-      const works = (n.works || []).map((w) => esc(S.works.find((x) => x.key === w)?.name || w)).join(", ") || '<span class="muted">none</span>';
-      h += `<tr><td><a onclick="focusNode('${n.id}')">${esc(n.name)}</a><div class="small muted">${groundText(n)}${n.features.length ? " · " + n.features.map((f) => FEATURE[f]).join(", ") : ""}</div>${n.siege ? `<div class="small warn">besieged</div>` : ""}</td>
+      const works = workLabels(n).map((w) => (w.improved ? `<span class="imp">✦ ${esc(w.label)}</span>` : esc(w.label))).join(", ") || '<span class="muted">none</span>';
+      h += `<tr><td><a onclick="focusNode('${n.id}')">${esc(n.name)}</a> <span class="small">${esc(n.tier_name)}</span><div class="small muted">${groundText(n)}${n.features.length ? " · " + n.features.map((f) => FEATURE[f]).join(", ") : ""}</div>${n.siege ? `<div class="small warn">besieged</div>` : ""}</td>
         <td class="n">${fmt(n.hands)}<div class="small muted">${n.jobs} jobs</div></td><td class="n">${fmt(n.produce)}</td>
         <td>${works}<div class="small muted">${n.works.length}/${n.slots} slots</div></td><td class="n ${n.unrest > 70 ? "down" : n.unrest > 40 ? "warn" : ""}">${n.unrest}</td>
         <td><div class="build">${investButtons(n)}</div></td></tr>`;
@@ -914,9 +945,11 @@ $("theme").addEventListener("click", () => {
 });
 $("help").addEventListener("click", () => { screen = "book"; renderScreen(); });
 $("regent").addEventListener("click", async () => {
-  if (!confirm("Let a regent rule for 10 turns? The AI will take every decision for us.")) return;
+  const ask = prompt("Let a regent rule for how many turns? (1 to 50) The AI will take every decision for us.", "10");
+  const turns = Math.max(1, Math.min(50, parseInt(ask, 10) || 0));
+  if (ask == null || !parseInt(ask, 10)) return;
   $("regent").disabled = true;
-  const s = await api("/regent", { turns: 10 });
+  const s = await api("/regent", { turns });
   $("regent").disabled = false;
   if (s) { update(s); showEnd(); }
 });

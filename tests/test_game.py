@@ -234,9 +234,9 @@ def test_every_people_leaves_hunting_early() -> None:
     assert early >= 0.9 * len(left), left
 
 
-def test_someone_farms_by_turn_60() -> None:
+def test_someone_farms_by_turn_90() -> None:
     hits = [
-        any((n.counters.get("mode_agriculture_turn") or 999) <= 60 for n in finished(s).nations.values())
+        any((n.counters.get("mode_agriculture_turn") or 999) <= 90 for n in finished(s).nations.values())
         for s in SEEDS
     ]
     assert sum(hits) >= 3, hits
@@ -503,3 +503,101 @@ def test_exploring_and_meeting_peoples_feed_ingenuity() -> None:
     gained = n.research_progress
     trade.update_contacts(w)
     assert other.id in n.contacts and n.research_progress == gained + rules.CONTACT_INGENUITY
+
+
+# --- settlements grow; works improve (§9.2a, §9.2b) ---------------------------------------------
+
+
+def _town(hands: float = 30.0) -> tuple[World, str, Any]:
+    w = generate(seed=5)
+    me, uid = _me(w)
+    n = w.nations[me]
+    n.known += ["tillage"]
+    node = w.nodes[w.units[uid].node]
+    actions.act(w, me, {"kind": "settle", "unit": uid})
+    node.hands = hands
+    return w, me, node
+
+
+def test_a_hamlet_has_few_slots_and_grows_for_stock() -> None:
+    w, me, node = _town()
+    n = w.nations[me]
+    assert node.tier == 0 and node.slots() == rules.TIERS[0].slots
+    n.stock = 1.0
+    assert actions.act(w, me, {"kind": "grow", "node": node.id}) == f"needs {rules.TIERS[1].cost:.0f} Stock"
+    n.stock = 100.0
+    assert actions.act(w, me, {"kind": "grow", "node": node.id}) is None
+    assert node.tier == 1 and node.slots() == rules.TIERS[1].slots
+    assert n.stock == 100.0 - rules.TIERS[1].cost
+
+
+def test_towns_and_cities_have_conditions() -> None:
+    w, me, node = _town(hands=40.0)
+    n = w.nations[me]
+    n.stock = 1000.0
+    node.tier = 1
+    node.river = False
+    n.budget["justice"] = 3
+    why = actions.grow_blocker(w, n, node.id)
+    assert why is not None and ("Market" in why or "Security" in why)
+    node.river = True
+    from stock.game import economy
+
+    if economy.security_of(w, n) >= rules.TOWN_SECURITY:
+        assert actions.act(w, me, {"kind": "grow", "node": node.id}) is None
+        assert actions.grow_blocker(w, n, node.id) == "needs a civil government"
+
+
+def test_an_improved_work_makes_more_and_takes_no_slot() -> None:
+    w, me, node = _town()
+    n = w.nations[me]
+    n.known += ["land_tenure"]
+    node.works = ["fields", "fields"]
+    n.stock = 100.0
+    n.prices["food"] = 5.0  # dear bread: improving the fields pays
+    dol = 1.0
+    from stock.game import economy
+
+    before = sum(j * v for _w, j, _p, v in economy._work_jobs(w, n, node, dol))
+    assert actions.act(w, me, {"kind": "improve", "node": node.id, "work": "fields"}) is None
+    assert actions.queued_on(n, node.id) == 0  # an improvement takes no slot
+    actions.process_build_queue(w, n)
+    assert node.improved_count("fields") == 1 and len(node.works) == 2
+    after = sum(j * v for _w, j, _p, v in economy._work_jobs(w, n, node, dol))
+    assert after > before
+    assert actions.act(w, me, {"kind": "improve", "node": node.id, "work": "fields"}) is None
+    assert actions.improve_blocker(w, n, node.id, "fields") == "every Fields here is improved"
+
+
+def test_pulling_down_takes_an_unimproved_work_first() -> None:
+    w, me, node = _town()
+    node.works = ["fields", "fields"]
+    node.improved = {"fields": 1}
+    assert actions.act(w, me, {"kind": "demolish", "node": node.id, "work": "fields"}) is None
+    assert node.works == ["fields"] and node.improved_count("fields") == 1
+    assert actions.act(w, me, {"kind": "demolish", "node": node.id, "work": "fields"}) is None
+    assert node.improved_count("fields") == 0
+
+
+def test_improvements_need_their_discovery() -> None:
+    w, me, node = _town()
+    node.works = ["fields"]
+    assert actions.act(w, me, {"kind": "improve", "node": node.id, "work": "fields"}) == (
+        f"needs {rules.DISCOVERIES[rules.IMPROVEMENTS['fields'].needs].name}"
+    )
+
+
+def test_commerce_needs_a_market_town() -> None:
+    from stock.game import victory
+
+    w, me, node = _town()
+    n = w.nations[me]
+    n.mode = "agriculture"
+    n.last["sources"] = {"agriculture": 10.0, "commerce": 30.0}
+    for _ in range(rules.MODE_STREAK + 1):
+        victory.update_mode(w, n)
+    assert n.mode == "agriculture"  # workshops alone do not make a commercial society
+    node.works.append("market")
+    for _ in range(rules.MODE_STREAK + 1):
+        victory.update_mode(w, n)
+    assert n.mode == "commerce"

@@ -224,7 +224,21 @@ def _research(world: World, n: Nation, style: str) -> None:
     _do(world, n, {"kind": "research", "key": max(options, key=score)})
 
 
+GROW_RESERVE = 10.0  # Stock the AI keeps back when it grows a settlement
+
+
+def _grow(world: World, n: Nation) -> None:
+    """A settlement with every slot taken grows, when it can and Stock allows."""
+
+    for nd in sorted(world.nodes_of(n.id), key=lambda x: -x.hands):
+        if len(nd.works) + actions.queued_on(n, nd.id) < nd.slots() or nd.tier >= len(rules.TIERS) - 1:
+            continue
+        if n.stock >= rules.TIERS[nd.tier + 1].cost + GROW_RESERVE:
+            _do(world, n, {"kind": "grow", "node": nd.id})
+
+
 def _builds(world: World, n: Nation) -> None:
+    _grow(world, n)
     if len(n.build_queue) >= 2:
         return
     r = float(n.last.get("r", rules.R0))
@@ -237,20 +251,14 @@ def _builds(world: World, n: Nation) -> None:
         for nd in sorted(world.nodes_of(n.id), key=lambda x: -x.hands):
             if _do(world, n, {"kind": "build", "node": nd.id, "work": work}):
                 return
-    best: tuple[float, str, str] | None = None
-    for nd in world.nodes_of(n.id):
-        for work in rules.WORKS:
-            if rules.WORKS[work].public:
-                continue
-            if actions.build_blocker(world, n, nd.id, work) is not None:
-                continue
-            ret = actions.expected_return(world, n, nd, work)
-            if ret >= r and (best is None or ret > best[0]):
-                best = (ret, nd.id, work)
-    if best is None:
+    pick = actions.best_investment(world, n, r)  # new works and improvements alike
+    if pick is not None:
+        _, nd, work, improve = pick
+        _do(world, n, {"kind": "improve" if improve else "build", "node": nd.id, "work": work})
+    else:
         best = _rebuild(world, n, r)
-    if best is not None:
-        _do(world, n, {"kind": "build", "node": best[1], "work": best[2]})
+        if best is not None:
+            _do(world, n, {"kind": "build", "node": best[1], "work": best[2]})
     # walls on the frontier, then roads when the Treasury is flush
     if n.seat == "civil" and n.knows("masonry") and n.treasury > 30:
         for nd in world.nodes_of(n.id):

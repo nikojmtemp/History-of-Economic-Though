@@ -11,17 +11,18 @@ from dataclasses import dataclass, field
 
 # --- turns and calendar (§4.1) -----------------------------------------------------------
 
-LAST_TURN = 150
+LAST_TURN = 250
 START_YEAR = -1500  # flavour only
 
 
 def year_of(turn: int) -> int:
-    """Calendar year at the start of `turn` (20 / 10 / 5 years per turn)."""
+    """Calendar year at the start of `turn`: 20 years a turn to turn 80, 12 to turn 170, then
+    7.5, so the last turn falls about the year The Wealth of Nations appeared."""
 
-    year = START_YEAR
+    year = float(START_YEAR)
     for t in range(1, turn):
-        year += 20 if t <= 40 else 10 if t <= 90 else 5
-    return year
+        year += 20 if t <= 80 else 12 if t <= 170 else 7.5
+    return int(year)
 
 
 MAP_NODES = (40, 80)  # §1 complexity budget: nodes per map
@@ -225,7 +226,98 @@ WORKS: dict[str, Work] = {
 FIELD_JOB_ARABLE = True  # fields yield x terrain arable
 WORK_SLOTS_BASE = 2
 WORK_SLOTS_PER_HANDS = 4.0
-WORK_SLOTS_MAX = 8
+WORK_SLOTS_MAX = 11  # a city's; each tier has its own cap (TIERS)
+
+
+# --- settlements grow (§9.2a): hamlet, village, town, city ----------------------------------
+
+
+@dataclass(frozen=True)
+class Tier:
+    name: str
+    slots: int  # most works a settlement of this tier can hold
+    cost: float  # Stock to grow into it
+    hands: float  # hands needed to grow into it
+    ingenuity: float = 0.0  # towns and cities are where invention lives
+    needs: str = ""  # what else it takes, in words (actions.grow_blocker checks it)
+
+
+TIERS: tuple[Tier, ...] = (
+    Tier("Hamlet", 4, 0.0, 0.0),
+    Tier("Village", 6, 15.0, 8.0, needs="8 hands"),
+    Tier("Town", 8, 50.0, 16.0, 2.0, "16 hands, Security of 50%, and a Market Town or a river"),
+    Tier("City", 11, 120.0, 28.0, 4.0, "28 hands, a civil government, and a Market Town"),
+)
+TOWN_SECURITY = 0.5
+
+
+# --- improvements (§9.2b): a work made better where it stands, no new slot ----------------------
+
+
+@dataclass(frozen=True)
+class Improvement:
+    work: str  # the work improved
+    name: str
+    needs: str  # discovery
+    cost: float  # Stock
+    mult: float = 1.0  # on everything the work makes
+    extra: dict[str, float] = field(default_factory=dict)  # goods added per job
+    description: str = ""
+
+
+IMPROVEMENTS: dict[str, Improvement] = {
+    i.work: i
+    for i in (
+        Improvement(
+            "fields",
+            "Enclosed farm",
+            "land_tenure",
+            15.0,
+            1.5,
+            description="Hedged, drained and manured by an improving owner: half as much again.",
+        ),
+        Improvement(
+            "pasture",
+            "Sheep-walk",
+            "weaving",
+            8.0,
+            extra={"wares": 0.6},
+            description="The flock kept for its wool as well as its meat: wares from every herdsman.",
+        ),
+        Improvement(
+            "workshop",
+            "Master's workshop",
+            "guilds",
+            15.0,
+            1.5,
+            description="A master and his journeymen, each at his own part of the work.",
+        ),
+        Improvement(
+            "market",
+            "Exchange",
+            "bills",
+            40.0,
+            2.0,
+            description="Merchants meet to deal in bills and cargoes: twice the trade.",
+        ),
+        Improvement(
+            "mine",
+            "Deep mine",
+            "machinery",
+            40.0,
+            1.8,
+            description="Shafts below the water table, kept dry by engines.",
+        ),
+        Improvement(
+            "port",
+            "Harbour",
+            "navigation",
+            35.0,
+            1.6,
+            description="Quays, a mole and a dry dock: more fish landed, more cargo handled.",
+        ),
+    )
+}
 RARE_LUXURY_YIELD = 0.3  # luxuries per workshop job on a rare node
 SERF_PRODUCTIVITY = 0.75
 
@@ -296,7 +388,7 @@ UNREST_EVENT_MIN_HANDS = 2.0
 
 # --- research (§12) ----------------------------------------------------------------------
 
-ERA_COST = {1: 30.0, 2: 45.0, 3: 150.0, 4: 300.0}
+ERA_COST = {1: 30.0, 2: 90.0, 3: 320.0, 4: 600.0}
 LATE_ERA = 3  # from Agriculture on, each discovery made makes the next dearer
 LATE_ESCALATION = 0.15  # cost x (1 + this per Agriculture or Commerce discovery already known)
 DIFFUSION_PER_CONTACT = 0.10
@@ -327,7 +419,7 @@ MODE_STREAK = 3
 # --- victory (§17) -----------------------------------------------------------------------
 
 HEGEMONY_SHARE = 0.40
-HEGEMONY_EARLIEST = 50
+HEGEMONY_EARLIEST = 100
 HEGEMONY_COUNTDOWN = 10
 HEGEMONY_RESET_AFTER = 3
 OPULENCE_POP_FLOOR = 0.25

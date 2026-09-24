@@ -37,7 +37,7 @@ These five rules decide every argument about scope. If a mechanic serves none of
 | Discoveries | 36 |
 | Nations | 3–6 (default 5) |
 | Map nodes | 40–80 (default 60) |
-| Turns | 150 |
+| Turns | 250 |
 | Session | 2–3 hours |
 
 ---
@@ -91,7 +91,7 @@ Every idea on this list maps to one mechanic. If an idea is not on the list, it 
 
 ### 4.1 Turns and time
 
-- **150 turns.** The calendar is flavour and slows down as the game goes on: turns 1–40 are 20 years each, 41–90 are 10 years, and 91–150 are 5 years. The model runs once per turn, and every rate in §21 is per turn.
+- **250 turns.** The calendar is flavour and slows down as the game goes on: turns 1–80 are 20 years each, 81–170 are 12 years, and 171–250 are 7½ years, so the game runs from 1500 BC to about 1772, when *The Wealth of Nations* was being finished. The model runs once per turn, and every rate in §21 is per turn.
 - **Turn structure:**
   1. **Player phase.** Movement and battles resolve the moment you act. Policy changes, research picks, and queued builds take effect at end of turn.
   2. **AI phase.** Each AI nation acts in turn order, using the same actions and rules as the player.
@@ -103,10 +103,10 @@ Every idea on this list maps to one mechanic. If an idea is not on the list, it 
 
 | Phase | Turns (typical) | Player is mostly doing |
 |---|---|---|
-| **Hunting** | 1–20 | Moving bands, splitting them to spread, exploring, first contact, choosing customs |
-| **Pasturage** | 15–45 | Hordes and herds, raiding, tribute, the first chiefs, deciding where to settle |
-| **Agriculture** | 35–90 | Fields and lords, forts, the first state and treasury, feudal politics, the first trade routes |
-| **Commerce** | 80–150 | Market towns, manufactories, trade networks, institutions and taxes, standing armies, hegemony or opulence |
+| **Hunting** | 1–20 | Moving bands, splitting them to spread, exploring with scouts, first contact, choosing customs |
+| **Pasturage** | 15–60 | Hordes and herds, raiding, tribute, the first chiefs, deciding where to settle, hamlets into villages |
+| **Agriculture** | 45–130 | Fields and lords, enclosure, forts, the first state and treasury, feudal politics, the first trade routes, towns |
+| **Commerce** | 90–250 | Market towns and exchanges, manufactories, cities, trade networks, institutions and taxes, standing armies, hegemony or opulence |
 
 Nations move through these phases at different speeds, and can go backwards. A nomad empire that never settles can win. Diverging paths are intended.
 
@@ -252,7 +252,7 @@ Each turn, the annual produce is split into four sources:
 - **Agriculture**: Fields.
 - **Commerce**: Workshops, Manufactories, Market Towns, and trade profit.
 
-The **mode** is the largest source. To switch modes, the challenger must lead by at least 10% for 3 consecutive turns. Falling back to an earlier mode works the same way. That is a **regression**. It is not a game over. It gets marked on the curves and triggers a moment.
+The **mode** is the largest source. To switch modes, the challenger must lead by at least 10% for 3 consecutive turns. Commerce also needs a **Market Town**: workshops alone do not make a commercial society, where "every man thus lives by exchanging". Falling back to an earlier mode works the same way. That is a **regression**. It is not a game over. It gets marked on the curves and triggers a moment.
 
 ### 8.2 What each mode gives you
 
@@ -299,6 +299,34 @@ Works are built on nodes and create jobs. The player queues them (§9.6).
 | **Foundry** | Firearms, Mine in the nation | 2 | Firearms supply for units | Profit | |
 | **Academy** | Public Instruction | 1 | Ingenuity +3, offsets Stupefaction | — | Public work |
 | **Bank** | Banking | 1 | Stock ×1.1 per turn (circulating capital) | Profit | Crash risk (§18) |
+
+### 9.2a Settlements grow
+
+Every settlement starts as a **Hamlet**, and its work slots are capped by its tier as well as by its hands (2 + 1 per 4 hands):
+
+| Tier | Slots at most | To grow into it | Also |
+|---|---|---|---|
+| Hamlet | 4 | settle | |
+| Village | 6 | 15 Stock, 8 hands | |
+| Town | 8 | 50 Stock, 16 hands, Security of 50%, a Market Town or a river | Ingenuity +2 |
+| City | 11 | 120 Stock, 28 hands, a civil government, a Market Town | Ingenuity +4 |
+
+Growing is an action on the settlement, paid at once from Stock. It is the first thing idle Stock goes to when every slot is taken; the AI grows its full settlements when it can spare the Stock.
+
+### 9.2b Works improve
+
+An **improvement** makes one work better where it stands, without a new slot. It is queued like a work, priced by its expected return against `r` like a work (§9.6), and investors who choose for themselves weigh improvements beside new works.
+
+| Work | Improvement | Needs | Cost (Stock) | Effect |
+|---|---|---|---|---|
+| Fields | Enclosed farm | Land Tenure | 15 | ×1.5 food |
+| Pasture | Sheep-walk | Weaving | 8 | +0.6 wares per herdsman (wool) |
+| Workshop | Master's workshop | Guilds | 15 | ×1.5 |
+| Market Town | Exchange | Bills of Exchange | 40 | ×2 trade |
+| Mine | Deep mine | Machinery | 40 | ×1.8 |
+| Port | Harbour | Navigation | 35 | ×1.6 |
+
+Pulling down a work takes an unimproved one first.
 
 **Roads** and **canals** are edge works (public works, paid from the Treasury): roads connect markets, and a canal turns a path into a river-class edge.
 
@@ -505,7 +533,7 @@ Each discovery has:
 - **Knowledge prerequisites**: at most two, and whenever possible either one will do (OR). There are no single-chain dependencies.
 - **An Observation**: a material condition in the world, such as "have followed wild herds for 3 turns" or "Extent ≥ 40". Meeting it **halves the cost**. Observations are never hard gates. The only hard limits are physical: you can research Sail with no coast, but you can't build a Port without one.
 - **Unlocks**: Works, units, institution options, verbs.
-- **Cost** by era: 30, 45, 150, and 300 Ingenuity. From Agriculture on, the web grows harder: each Agriculture- or Commerce-era discovery already known makes the next one of those eras 15% dearer. A people can climb the early eras whole, but by the last turn it will know only about half of the Commerce column, and must choose which half.
+- **Cost** by era: 30, 90, 320, and 600 Ingenuity. From Agriculture on, the web grows harder: each Agriculture- or Commerce-era discovery already known makes the next one of those eras 15% dearer. A people can climb the early eras whole, but by the last turn it will know only about half of the Commerce column, and must choose which half.
 
 ### 12.3 Diffusion
 
@@ -774,7 +802,7 @@ Relations run from −100 to +100. They move with trade routes (+), shared enemi
 
 **Hegemony** (dominance, and Smith's conflict strand) comes from the size of your economy plus an orbit of dependent nations.
 
-**Opulence** (per-head wealth, and Smith's harmony strand) is scored at turn 150. The winner is the nation with the highest **produce per head** among nations that are sovereign (in nobody's orbit) and have at least 25% of the average population. If every nation is in someone's orbit, the orbit condition is dropped.
+**Opulence** (per-head wealth, and Smith's harmony strand) is scored at turn 250. The winner is the nation with the highest **produce per head** among nations that are sovereign (in nobody's orbit) and have at least 25% of the average population. If every nation is in someone's orbit, the orbit condition is dropped.
 
 The tension from the old design is still here. A small, rich, free nation can win on opulence while a big empire chases hegemony. And a hegemon's orbit disqualifies its satellites from opulence.
 
@@ -953,12 +981,12 @@ These are starting values for tuning, not commitments.
 |---|---|
 | First nation leaves Hunting | turns 12–25 |
 | All nations have left Hunting | by turn 45 in ≥ 90% of seeds |
-| At least one nation reaches Agriculture | by turn 60 in ≥ 90% of seeds |
-| A player pursuing it reaches Commerce | turns 85–110 |
-| At least one manufactory in the world | by turn 110 in ≥ 90% of seeds (the first build: 0%) |
-| AI wars | ≥ 1 per 25 turns across the world; ≥ 1 treaty per 20 turns |
-| Hegemony achieved by turn 150 | in 30–60% of AI-only seeds (the rest end on opulence) |
-| Game length | 150 turns, 2–3 hours |
+| At least one nation reaches Agriculture | by turn 90 in ≥ 90% of seeds |
+| A player pursuing it reaches Commerce | turns 90–140 |
+| At least one manufactory in the world | by turn 180 in ≥ 90% of seeds (the first build: 0%) |
+| AI wars | ≥ 1 per 25 turns across the world (10 a game); ≥ 1 treaty per 20 turns |
+| Hegemony achieved by turn 250 (not before turn 100) | in 30–60% of AI-only seeds (the rest end on opulence) |
+| Game length | 250 turns, 4–5 hours |
 | Decisions | At least one meaningful decision per turn |
 | Turn time after turn 50 | Under 60 seconds on average |
 

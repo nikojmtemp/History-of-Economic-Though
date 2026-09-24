@@ -53,7 +53,7 @@ Builds a windowed app in `dist/Stock/`. With `--desktop` it installs the app to 
 
 ## Balance (tools.sweep, 30 AI-only games)
 
-First people leaves Hunting at turn 15 (median); all peoples out of Hunting by turn 45 in every game; someone farming by turn 60 in every game; a manufactory by turn 110 in 97%; at least 6 wars in 53%; hegemony in 37% (target 30–60%); Commerce reached in every game, first at median turn 80. By turn 150 a people knows about 10 of 12 Agriculture-era and 5 of 10 Commerce-era discoveries.
+250-turn games. First people leaves Hunting at turn 14.5 (median); all peoples out of Hunting by turn 45 in 90% of games; someone farming by turn 90 in every game; a manufactory by turn 180 in every game; at least 10 wars in 63% (median 18); hegemony in 50% (target 30–60%, not before turn 100); Commerce reached in every game, first at median turn 92.
 
 ## Milestones (§22.3)
 

@@ -133,6 +133,7 @@ def ingenuity(world: World, n: Nation) -> dict[str, float]:
         "workshops": 1.0 * works.count("workshop"),
         "towns": 2.0 * works.count("market"),
         "academies": 3.0 * works.count("academy"),
+        "towns and cities": sum(rules.TIERS[nd.tier].ingenuity for nd in nodes),
         "division": (dol - 1.0) * 2.0,
         "routes": float(sum(1 for r in world.routes.values() if n.id in (r.a, r.b))),
     }

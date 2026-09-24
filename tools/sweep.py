@@ -62,9 +62,9 @@ def main() -> None:
             0.8,
         ),
         ("all peoples leave Hunting by turn 45", share(lambda r: r["all_left"] and r["all_left"] <= 45), 0.9),
-        ("someone farms by turn 60", share(lambda r: r["agriculture"] <= 60), 0.9),
-        ("a manufactory by turn 110", share(lambda r: r["manufactory"] and r["manufactory"] <= 110), 0.9),
-        ("at least 1 war per 25 turns (6 a game)", share(lambda r: r["wars"] >= 6), 0.5),
+        ("someone farms by turn 90", share(lambda r: r["agriculture"] <= 90), 0.9),
+        ("a manufactory by turn 180", share(lambda r: r["manufactory"] and r["manufactory"] <= 180), 0.9),
+        ("at least 1 war per 25 turns (10 a game)", share(lambda r: r["wars"] >= 10), 0.5),
     ]
     hegemony = share(lambda r: r["winner"] == "hegemony")
     print(f"{n} seeds in {time.time() - t0:.1f}s")
