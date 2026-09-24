@@ -34,9 +34,9 @@ async function act(action) {
   update(res.state);
   return true;
 }
-function toast(msg) {
-  const t = $("toast"); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), 2600);
+function toast(msg, good = false) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false; t.classList.toggle("good", good);
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.hidden = true), good ? 4000 : 2600);
 }
 
 // --- tooltips ----------------------------------------------------------------------
@@ -665,11 +665,11 @@ function nextCard() {
 
 // --- screens ------------------------------------------------------------------------------------
 
-function openScreen(name) { screen = name; renderScreen(); }
+function openScreen(name) { screen = name; if (name === "saves") savesList = null; renderScreen(); }
 function closeScreen() { screen = null; $("screen").hidden = true; }
 function renderScreen() {
   if (!screen) return;
-  const body = { settlements: screenSettlements, discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, reports: screenReports, book: screenBook }[screen]();
+  const body = { saves: screenSaves, settlements: screenSettlements, discoveries: screenDiscoveries, institutions: screenInstitutions, treasury: screenTreasury, trade: screenTrade, nations: screenNations, reports: screenReports, book: screenBook }[screen]();
   $("screen-body").innerHTML = `<div class="screen-bar"><button class="close" onclick="closeScreen()" title="Close (Escape)">Close ✕</button></div>` + body;
   $("screen").hidden = false;
 }
@@ -816,6 +816,48 @@ function screenSettlements() {
   return h + `</table>`;
 }
 
+// --- saves: every change is autosaved; named saves on top ------------------------------------
+
+let savesList = null, savesFolder = "";
+async function refreshSaves() {
+  const r = await api("/saves");
+  if (r) { savesList = r.saves; savesFolder = r.folder; if (screen === "saves") renderScreen(); }
+}
+function ago(t) {
+  const s = Date.now() / 1000 - t;
+  return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} minutes ago` : s < 129600 ? `${Math.round(s / 3600)} hours ago` : new Date(t * 1000).toLocaleDateString();
+}
+function yearText(y) { return y < 0 ? `${-y} BC` : `AD ${y}`; }
+async function saveGame() {
+  const name = $("save-name").value.trim();
+  const r = await api("/save", { name });
+  if (r) { savesList = r.saves; toast(`Saved as "${r.saved}".`, true); renderScreen(); }
+}
+async function loadGame(file) {
+  if (!confirm(`Load "${file}"? The game now open is in the autosave until you do anything in the loaded one.`)) return;
+  const s = await api("/load", { file });
+  if (s) { sel = null; view = null; showEnd.shown = false; closeScreen(); update(s); toast(`Loaded "${file}".`, true); }
+}
+async function deleteSave(file) {
+  if (!confirm(`Delete the save "${file}"? This cannot be undone.`)) return;
+  const r = await api("/delete_save", { file });
+  if (r) { savesList = r.saves; renderScreen(); }
+}
+function screenSaves() {
+  if (savesList === null) { refreshSaves(); return `<h2>Saves</h2><p class="muted">Reading your saves…</p>`; }
+  const suggested = `${S.me.name} - turn ${S.turn}`;
+  let h = `<h2>Saves</h2><p class="muted">Everything you do is saved as you go (the autosave), and the game carries on from it the next time you open Stock. Save under a name to keep a moment you may want to return to.</p>`;
+  h += `<div class="verbs"><input id="save-name" value="${esc(suggested)}" maxlength="60" style="min-width:260px"> <button class="primary" onclick="saveGame()">Save this game</button></div>`;
+  h += `<table class="plain saves"><tr><th>Save</th><th>People</th><th>Turn</th><th>Year</th><th>Age</th><th>Saved</th><th></th></tr>`;
+  for (const s of savesList) {
+    h += `<tr><td><b>${s.auto ? "Autosave" : esc(s.file)}</b>${s.auto ? '<div class="small muted">kept as you play</div>' : ""}</td><td>${esc(s.people)}</td><td class="n">${s.turn}${s.over ? ' <span class="small muted">(decided)</span>' : ""}</td>
+      <td>${yearText(s.year)}</td><td>${esc(s.age)}</td><td class="small">${ago(s.saved)}</td>
+      <td><button onclick="loadGame('${esc(s.file).replace(/'/g, "\\'")}')">Load</button>${s.auto ? "" : ` <button class="small" title="Delete this save" onclick="deleteSave('${esc(s.file).replace(/'/g, "\\'")}')">✕</button>`}</td></tr>`;
+  }
+  h += `</table><p class="small muted">Saves are kept in ${esc(savesFolder)}.</p>`;
+  return h;
+}
+
 async function forecastOption(pillar, option, el) {
   const res = await api("/forecast", { kind: "institution", pillar, option });
   if (!res) return;
@@ -900,7 +942,7 @@ function screenBook() {
     ["Public credit", "A state may borrow from its own Stock-holders, which leaves less to invest, or abroad, which puts it in the lender's power. Interest rises with the debt. A default wipes the debt and the state's credit with it."],
     ["Orbits", "Supply a quarter of a people's food or wares, hold five turns of its revenue in debt, or take its tribute, and it is in your orbit. A leader with 40% of the world's produce and half the peoples in its sphere starts a countdown to hegemony, and the rest combine against it."],
     ["Events", "Harvests fail, plagues come along the trade routes, workmen invent, landowners petition to enclose, banks break. Each comes as a card with choices; the AI answers the same cards."],
-    ["Keys", "Space or Enter ends the turn. Tab selects your next unit, Escape (or a click on open ground) lets go of it; M folds the selection card away and back. S settlements, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
+    ["Keys", "Space or Enter ends the turn. Tab selects your next unit, Escape (or a click on open ground) lets go of it; M folds the selection card away and back. S settlements, L saves, D discoveries, I institutions, T treasury, R trade, P peoples, O reports, B this book, ? keys, Escape closes a screen."],
   );
   return `<h2>Commonplace Book</h2>` + entries.map(([t, b]) => `<h3>${t}</h3><p style="max-width:720px">${b}</p>`).join("");
 }
@@ -918,6 +960,7 @@ document.querySelectorAll("#overlays [data-overlay]").forEach((b) => b.addEventL
 }));
 $("research-now").addEventListener("click", () => openScreen("discoveries"));
 $("new-world").addEventListener("click", async () => {
+  if (!confirm("Start a new world? The game you are playing is kept only in the autosave, which the new world replaces. To keep it, save it under a name first (Saves).")) return;
   const spec = prompt("World: random, or random:SEED:NODES:NATIONS", "random");
   if (spec == null) return;
   const s = await api("/new", { spec });
@@ -970,7 +1013,7 @@ document.addEventListener("keydown", (e) => {
   if (!screen && (e.key === "+" || e.key === "=")) zoomBy(1 / 1.4);
   if (!screen && (e.key === "-" || e.key === "_")) zoomBy(1.4);
   if (!screen && e.key === "0") { view = null; fitMap(); }
-  const k = { s: "settlements", d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
+  const k = { l: "saves", s: "settlements", d: "discoveries", i: "institutions", t: "treasury", r: "trade", p: "nations", o: "reports", b: "book" }[e.key.toLowerCase()];
   if (k) (screen === k ? closeScreen() : openScreen(k));
   if (e.key === "Tab") {
     e.preventDefault();
@@ -989,4 +1032,5 @@ api("/state").then((s) => {
   const mine = s.units.find((u) => u.nation === s.me.id);
   if (mine) sel = { type: "unit", id: mine.id };
   update(s);
+  if (s.note) toast(s.note, true);  // e.g. welcome back to the game in the autosave
 });

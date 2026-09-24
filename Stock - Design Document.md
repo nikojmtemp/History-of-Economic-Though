@@ -952,6 +952,15 @@ Early turns show one contextual hint at a time, read from the board: choosing a 
 
 Keep day and night themes, the colour-blind-safe nation inks, reduced motion, and keyboard control of every screen. Add hotkeys: End Turn (Enter), next unit (Tab), and one key per overlay and per screen. The map zooms (mouse wheel about the pointer, + and −, or the corner buttons) and pans by dragging; ⤢ or 0 shows everything we know again.
 
+### 19.10 Saving
+
+A 250-turn game does not fit in one sitting, so nothing the player does is ever lost:
+
+- **Autosave.** Everything that changes the game is saved at once: each action, each turn, a regent's reign, a new world, a load. A save is about 50 KB and takes about 10 ms.
+- **Continue.** Opening Stock carries on from the autosave, with a short "welcome back" note. **New** warns first that it replaces the game in the autosave.
+- **Named saves.** The **Saves** screen (L) saves the game under a name (the people and turn by default), and lists every save with its people, turn, year, age and when it was saved, to load or delete.
+- Saves live in the player's own folder: `%LOCALAPPDATA%\Stock\saves` on Windows, `~/Library/Application Support/Stock/saves` on the Mac, `~/.local/share/stock/saves` elsewhere. A save from an older build still loads: any field it lacks takes its default.
+
 ---
 
 ## 20. Starting numbers

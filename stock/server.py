@@ -8,6 +8,13 @@ POST /forecast         one action, previewed one turn ahead (§19.5)
 POST /turn             end the turn
 POST /regent           let the AI rule our people for {"turns": N} turns (it takes every decision)
 POST /new              a new world: {"spec": "random:SEED:NODES:NATIONS"} or {} for a fresh seed
+GET  /saves            the saved games, newest first
+POST /save             save the game as {"name": ...} (a default name if none)
+POST /load             load {"file": ...}
+POST /delete_save      delete {"file": ...}
+
+With no world spec given, the server continues the autosave if there is one. Everything
+that changes the game is autosaved (stock/saves.py), so closing the app loses nothing.
 """
 
 from __future__ import annotations
@@ -21,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from stock import saves
 from stock.game import actions, ai, turn, view
 from stock.game.state import World
 from stock.game.worldgen import generate, parse_spec
@@ -31,7 +39,21 @@ WEB = Path(__file__).resolve().parent / "web"
 class Game:
     def __init__(self, spec: str | None = None) -> None:
         self.lock = threading.Lock()
-        self.world: World = generate(parse_spec(spec))
+        self.note: str | None = None  # said once, on the first look at the game
+        world: World | None = None
+        if spec is None and saves.exists(saves.AUTOSAVE):
+            try:
+                world = saves.load(saves.AUTOSAVE)
+                self.note = f"Welcome back: your game goes on from turn {world.turn}."
+            except Exception:  # noqa: BLE001 - a spoiled autosave must not stop the game starting
+                self.note = "Your last game could not be read, so a new world begins."
+        self.world: World = world or generate(parse_spec(spec))
+
+    def autosave(self) -> None:
+        try:
+            saves.save(self.world, saves.AUTOSAVE)
+        except OSError:
+            pass  # a full or locked disk costs the autosave, never the game
 
     def player_id(self) -> str:
         p = self.world.player()
@@ -70,7 +92,10 @@ def create_app(spec: str | None = None) -> FastAPI:
     @app.get("/state")
     def state() -> dict[str, Any]:
         with game.lock:
-            return view.snapshot(game.world)
+            snap = view.snapshot(game.world)
+            if game.note:
+                snap["note"], game.note = game.note, None
+            return snap
 
     @app.get("/scenario")
     def scenario() -> dict[str, Any]:
@@ -80,6 +105,8 @@ def create_app(spec: str | None = None) -> FastAPI:
     def action(body: dict[str, Any]) -> dict[str, Any]:
         with game.lock:
             why = actions.act(game.world, game.player_id(), body)
+            if why is None:
+                game.autosave()
             return {"ok": why is None, "why": why, "state": view.snapshot(game.world)}
 
     @app.post("/forecast")
@@ -97,6 +124,7 @@ def create_app(spec: str | None = None) -> FastAPI:
             if me.decisions:
                 raise HTTPException(409, "Answer the waiting decision first.")
             turn.end_turn(game.world)
+            game.autosave()
             return view.snapshot(game.world)
 
     @app.post("/regent")
@@ -110,6 +138,7 @@ def create_app(spec: str | None = None) -> FastAPI:
                     break
                 ai.take_turn(game.world, me)
                 turn.end_turn(game.world)
+            game.autosave()
             return view.snapshot(game.world)
 
     @app.post("/new")
@@ -119,7 +148,45 @@ def create_app(spec: str | None = None) -> FastAPI:
                 game.world = generate(parse_spec(body.get("spec")))
             except (ValueError, TypeError) as exc:
                 raise HTTPException(422, str(exc)) from exc
+            game.autosave()
             return view.snapshot(game.world)
+
+    @app.get("/saves")
+    def list_saves() -> dict[str, Any]:
+        return {"saves": saves.list_saves(), "folder": str(saves.saves_dir())}
+
+    @app.post("/save")
+    def save(body: dict[str, Any]) -> dict[str, Any]:
+        with game.lock:
+            meta = saves.meta_of(game.world)
+            name = str(body.get("name") or f"{meta['people']} - turn {meta['turn']}").strip()
+            if name == saves.AUTOSAVE:
+                raise HTTPException(422, "That name is kept for the autosave.")
+            try:
+                saves.save(game.world, name)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            return {"saves": saves.list_saves(), "saved": name}
+
+    @app.post("/load")
+    def load(body: dict[str, Any]) -> dict[str, Any]:
+        with game.lock:
+            try:
+                game.world = saves.load(str(body.get("file", "")))
+            except FileNotFoundError as exc:
+                raise HTTPException(404, "No such save.") from exc
+            except Exception as exc:  # noqa: BLE001 - a spoiled file is the player's news, not a crash
+                raise HTTPException(422, f"That save could not be read: {exc}") from exc
+            game.autosave()
+            return view.snapshot(game.world)
+
+    @app.post("/delete_save")
+    def delete_save(body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            saves.delete(str(body.get("file", "")))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"saves": saves.list_saves()}
 
     app.mount("/static", StaticFiles(directory=WEB), name="static")
     return app

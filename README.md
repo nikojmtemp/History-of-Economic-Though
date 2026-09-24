@@ -9,7 +9,7 @@ A turn-based civ-lite about Adam Smith's four stages. The design is in
 .venv/Scripts/python.exe -m stock.launch
 ```
 
-Opens the game in your browser on a fresh world. `--scenario random:SEED:NODES:NATIONS` replays a world.
+Opens the game in your browser, carrying on from the autosave if there is one (everything you do is saved as you go; the **Saves** screen keeps named saves). `--scenario random:SEED:NODES:NATIONS` starts that world instead.
 
 ## Package
 

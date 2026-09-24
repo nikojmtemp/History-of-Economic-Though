@@ -137,6 +137,8 @@ table.plain td.n { text-align: right; }
 #moment q { display: block; font: italic 15px var(--serif); color: var(--ink-2); margin: 12px 0; }
 #tip { position: fixed; z-index: 30; max-width: 320px; background: var(--ink); color: var(--paper); padding: 6px 9px;
   font-size: 12px; border-radius: var(--radius); pointer-events: none; white-space: pre-line; }
+#toast.good { background: var(--up); }
+table.saves td { vertical-align: middle; }
 #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--down); color: #fff;
   padding: 6px 12px; border-radius: var(--radius); z-index: 40; }
 .strike { fill: none; stroke: var(--down); stroke-width: 2.5; stroke-dasharray: 4 3; pointer-events: none; }
